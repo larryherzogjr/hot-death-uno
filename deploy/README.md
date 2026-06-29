@@ -26,29 +26,33 @@ git init && git add -A && git commit -m "Hot Death Uno: engine + web app"
 gh repo create hot-death-uno --private --source=. --remote=origin --push
 ```
 On the Ubuntu host (needs git access to the private repo — add an SSH deploy key,
-a PAT, or run `gh auth login` on the host):
+a PAT, or run `gh auth login` on the host). `/srv` is root-owned, so either take
+ownership first or clone with sudo:
 ```bash
-git clone git@github.com:<you>/hot-death-uno.git hdu && cd hdu
+sudo mkdir -p /srv/HotDeathUno && sudo chown "$USER" /srv/HotDeathUno
+git clone git@github.com:<you>/hot-death-uno.git /srv/HotDeathUno
+cd /srv/HotDeathUno
 ```
 Updates later: `git pull && docker compose up -d --build`.
 
 ### Option B — Manual transfer (no GitHub)
 From this dev machine (copies just the needed paths; skips `.venv`/tests):
+First make the target writable: `sudo mkdir -p /srv/HotDeathUno && sudo chown "$USER" /srv/HotDeathUno` (on the host).
 ```bash
 rsync -av --exclude='__pycache__' \
   Dockerfile .dockerignore requirements.txt docker-compose.yml hdu server deploy \
-  <user>@<host>:/opt/hdu/
+  <user>@<host>:/srv/HotDeathUno/
 ```
 …or as a tarball:
 ```bash
 tar czf hdu.tgz Dockerfile .dockerignore requirements.txt docker-compose.yml hdu server deploy
-scp hdu.tgz <user>@<host>:/opt/hdu/   # then on the host: cd /opt/hdu && tar xzf hdu.tgz
+scp hdu.tgz <user>@<host>:/srv/HotDeathUno/   # on host: cd /srv/HotDeathUno && tar xzf hdu.tgz
 ```
 Updates later: re-run the rsync/scp, then `docker compose up -d --build`.
 
 ## 1. Build & run the container
 ```bash
-cd hdu                                 # (or /opt/hdu for manual transfer)
+cd /srv/HotDeathUno
 docker compose up -d --build
 curl -s localhost:8126/ | head -c 60   # sanity: should return the SPA HTML
 ```
