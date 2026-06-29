@@ -1,0 +1,12 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+
+# Local Claude settings (keep launch.json; ignore machine-local overrides)
+.claude/settings.local.json

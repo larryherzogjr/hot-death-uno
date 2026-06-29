@@ -1,0 +1,14 @@
+[project]
+name = "hot-death-uno"
+version = "0.0.0"
+description = "Single-player AI-opponent Hot Death Uno — pure Python rules engine."
+requires-python = ">=3.12"
+
+# The engine package depends on stdlib only. pytest is the lone tooling dep.
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"

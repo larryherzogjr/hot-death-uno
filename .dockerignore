@@ -1,0 +1,12 @@
+.venv/
+.git/
+.gitignore
+tests/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.claude/
+deploy/
+*.md
+pyproject.toml
+docker-compose.yml

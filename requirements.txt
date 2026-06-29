@@ -1,0 +1,5 @@
+# Production (web runtime) dependencies. The hdu/ engine itself is stdlib-only;
+# these are for the server/ consumer layer. Dev/test deps (pytest, httpx) are in
+# pyproject.toml [project.optional-dependencies].dev and are NOT installed here.
+fastapi==0.138.2
+uvicorn[standard]==0.49.0

@@ -1,0 +1,11 @@
+# Single in-memory game server, fronted by the host's nginx (TLS + wss).
+# The published port is bound to localhost only, so the app is reachable solely
+# through nginx — never directly from the internet.
+services:
+  hdu:
+    build: .
+    image: hdu:latest
+    container_name: hdu
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8126:8000"

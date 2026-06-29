@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hdu-web",
+      "runtimeExecutable": ".venv/bin/uvicorn",
+      "runtimeArgs": ["server.app:app", "--port", "8126"],
+      "port": 8126
+    }
+  ]
+}

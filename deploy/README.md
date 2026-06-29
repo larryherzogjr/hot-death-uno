@@ -1,0 +1,95 @@
+# Deploying Hot Death Uno to hdu.ospdy.com
+
+Self-hosted on the cloud Ubuntu box: the app runs in Docker bound to
+`127.0.0.1:8126`, and the host's **nginx** reverse-proxies `hdu.ospdy.com`
+(TLS + WebSocket) to it. v1 is a single uvicorn worker with in-memory game
+sessions — fine for user testing; games are lost on restart.
+
+## Prerequisites
+- DNS: an **A/AAAA record for `hdu.ospdy.com`** pointing at the server's public IP.
+- Docker Engine + the Compose plugin (`docker compose version` should work).
+- nginx + certbot (`python3-certbot-nginx`) already on the host.
+
+## 0. Get the code onto the host
+
+The build needs only these paths (the `.venv`, `tests/`, and editor cruft are
+**not** required, and `.dockerignore` keeps them out of the image regardless):
+
+```
+Dockerfile  .dockerignore  requirements.txt  docker-compose.yml  hdu/  server/  deploy/
+```
+
+### Option A — GitHub (recommended; repeatable updates)
+From this dev machine, one-time:
+```bash
+git init && git add -A && git commit -m "Hot Death Uno: engine + web app"
+gh repo create hot-death-uno --private --source=. --remote=origin --push
+```
+On the Ubuntu host (needs git access to the private repo — add an SSH deploy key,
+a PAT, or run `gh auth login` on the host):
+```bash
+git clone git@github.com:<you>/hot-death-uno.git hdu && cd hdu
+```
+Updates later: `git pull && docker compose up -d --build`.
+
+### Option B — Manual transfer (no GitHub)
+From this dev machine (copies just the needed paths; skips `.venv`/tests):
+```bash
+rsync -av --exclude='__pycache__' \
+  Dockerfile .dockerignore requirements.txt docker-compose.yml hdu server deploy \
+  <user>@<host>:/opt/hdu/
+```
+…or as a tarball:
+```bash
+tar czf hdu.tgz Dockerfile .dockerignore requirements.txt docker-compose.yml hdu server deploy
+scp hdu.tgz <user>@<host>:/opt/hdu/   # then on the host: cd /opt/hdu && tar xzf hdu.tgz
+```
+Updates later: re-run the rsync/scp, then `docker compose up -d --build`.
+
+## 1. Build & run the container
+```bash
+cd hdu                                 # (or /opt/hdu for manual transfer)
+docker compose up -d --build
+curl -s localhost:8126/ | head -c 60   # sanity: should return the SPA HTML
+```
+
+## 2. Wire up nginx
+```bash
+sudo cp deploy/nginx/hdu.ospdy.com.conf /etc/nginx/sites-available/hdu.ospdy.com
+sudo ln -s /etc/nginx/sites-available/hdu.ospdy.com /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+If nginx complains that `$connection_upgrade` is already defined, delete the
+`map { ... }` block at the top of the conf (you have one elsewhere already).
+
+## 3. Issue the TLS certificate
+```bash
+sudo certbot --nginx -d hdu.ospdy.com
+```
+certbot fills in the `ssl_certificate*` lines and the http→https redirect, then
+reloads nginx. Auto-renewal is handled by the certbot systemd timer.
+
+## 4. Verify
+Open **https://hdu.ospdy.com** — click *New game* and play. The header should
+read **connected** (the WebSocket is up through `wss://`).
+
+## Updating
+```bash
+git pull && docker compose up -d --build
+```
+
+## Operating
+- Logs: `docker compose logs -f`
+- Restart: `docker compose restart`
+- Stop: `docker compose down`
+- Change the host port: edit the `ports:` line in `docker-compose.yml` (and the
+  `proxy_pass` in the nginx conf to match).
+
+## Notes / v1 limits
+- **In-memory sessions, single worker.** Restarting the container drops live
+  games. Scaling to multiple workers would need a shared session store (the
+  `SessionManager` is kept behind one interface to make that swap clean).
+- The published Docker port is bound to `127.0.0.1`, so the app is reachable
+  **only** via nginx, never directly from the internet.
+- No accounts/auth yet — anyone with the link can create/play games. Add a
+  basic-auth block in nginx or a shared passcode if you want to gate testers.

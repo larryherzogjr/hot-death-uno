@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hot Death Uno</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Hot Death Uno</h1>
+    <div class="newgame">
+      <label>Players
+        <select id="numPlayers">
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4" selected>4</option>
+        </select>
+      </label>
+      <button id="newGameBtn">New game</button>
+      <span id="conn" class="conn"></span>
+    </div>
+  </header>
+
+  <main id="game" hidden>
+    <section id="status" class="status"></section>
+    <section id="opponents" class="opponents"></section>
+
+    <section class="table">
+      <div id="discard" class="discard"></div>
+      <div id="pending" class="pending"></div>
+    </section>
+
+    <section id="actions" class="actions"></section>
+
+    <section class="hand-wrap">
+      <h2>Your hand <span id="turnHint" class="turn-hint"></span></h2>
+      <div id="hand" class="hand"></div>
+    </section>
+
+    <section class="log-wrap">
+      <h2>Log</h2>
+      <div id="log" class="log"></div>
+    </section>
+
+    <div id="banner" class="banner" hidden></div>
+  </main>
+
+  <p id="intro" class="intro">Start a new game — you are <b>Player 0</b> versus AI opponents.</p>
+
+  <script src="app.js"></script>
+</body>
+</html>
