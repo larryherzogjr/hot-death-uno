@@ -49,6 +49,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def no_cache_static(request: Request, call_next):
+    """Make browsers revalidate the SPA assets every load, so a deploy is picked
+    up immediately instead of running a stale mix of cached old/new files."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 manager = SessionManager()
 
 

@@ -17,9 +17,10 @@ const $ = (id) => document.getElementById(id);
 $("newGameBtn").onclick = () =>
   newGame(parseInt($("numPlayers").value, 10), parseInt($("numHumans").value, 10));
 $("rulesBtn").onclick = openRules;
-$("rulesClose").onclick = () => { $("rulesModal").hidden = true; };
-$("rulesModal").onclick = (e) => { if (e.target.id === "rulesModal") $("rulesModal").hidden = true; };
+$("rulesClose").onclick = closeRules;
+$("rulesModal").onclick = (e) => { if (e.target.id === "rulesModal") closeRules(); };
 document.addEventListener("click", (e) => { if (!e.target.closest(".badge")) hideTip(true); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeRules(); hideTip(true); } });
 
 window.addEventListener("load", async () => {
   loadCatalog();
@@ -184,7 +185,10 @@ function hideTip(force) {
 }
 
 // --- rules modal ------------------------------------------------------------
-function openRules() {
+function closeRules() { $("rulesModal").hidden = true; }
+
+async function openRules() {
+  if (!catalogList.length) await loadCatalog();  // ensure it's loaded on demand
   const groups = {}, order = [];
   for (const c of catalogList) {
     if (!groups[c.category]) { groups[c.category] = []; order.push(c.category); }

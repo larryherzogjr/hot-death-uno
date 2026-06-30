@@ -184,6 +184,12 @@ def test_no_passcode_required_when_unset(client):
     assert client.post("/api/games", json={"seed": 1}).status_code == 200
 
 
+def test_spa_assets_are_no_cache(client):
+    # The SPA (served at /) must revalidate so deploys aren't masked by a stale
+    # cached mix of old/new assets.
+    assert client.get("/").headers.get("cache-control") == "no-cache"
+
+
 def test_websocket_pushes_snapshot_and_updates(client):
     g = _new_game(client)
     gid, tok = g["game_id"], g["player_token"]
