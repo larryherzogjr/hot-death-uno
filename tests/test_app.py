@@ -184,10 +184,13 @@ def test_no_passcode_required_when_unset(client):
     assert client.post("/api/games", json={"seed": 1}).status_code == 200
 
 
-def test_spa_assets_are_no_cache(client):
-    # The SPA (served at /) must revalidate so deploys aren't masked by a stale
-    # cached mix of old/new assets.
-    assert client.get("/").headers.get("cache-control") == "no-cache"
+def test_spa_index_is_no_cache_with_versioned_assets(client):
+    # The SPA index must revalidate (no-cache) and reference versioned asset URLs
+    # so a deploy busts even an aggressive browser/proxy cache.
+    r = client.get("/")
+    assert r.headers.get("cache-control") == "no-cache"
+    body = r.text
+    assert "app.js?v=" in body and "style.css?v=" in body
 
 
 def test_websocket_pushes_snapshot_and_updates(client):

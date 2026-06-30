@@ -10,6 +10,7 @@ Run locally:  uvicorn server.app:app --reload
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -290,11 +291,35 @@ async def game_ws(websocket: WebSocket, game_id: str, token: str = Query(...)) -
 
 
 # --------------------------------------------------------------------------- #
-# Static frontend (slice 4). Mounted last so /api/* wins. Safe if absent.
+# Static frontend. Index is served with versioned asset URLs (a content hash) so
+# a deploy busts even an aggressive browser/proxy cache; assets come from the
+# StaticFiles mount, which ignores the ?v= query. Mounted last so /api/* wins.
 # --------------------------------------------------------------------------- #
 
 _STATIC = Path(__file__).parent / "static"
+
+
+def _build_version() -> str:
+    h = hashlib.sha1()
+    for name in ("index.html", "app.js", "style.css"):
+        p = _STATIC / name
+        if p.exists():
+            h.update(p.read_bytes())
+    return h.hexdigest()[:8]
+
+
 if _STATIC.is_dir():
+    _BUILD = _build_version()
+    _INDEX_HTML = (
+        (_STATIC / "index.html").read_text()
+        .replace('href="style.css"', f'href="style.css?v={_BUILD}"')
+        .replace('src="app.js"', f'src="app.js?v={_BUILD}"')
+    )
+
+    @app.get("/")
+    async def index() -> HTMLResponse:
+        return HTMLResponse(_INDEX_HTML, headers={"Cache-Control": "no-cache"})
+
     app.mount("/", StaticFiles(directory=str(_STATIC), html=True), name="static")
 else:
     @app.get("/")
