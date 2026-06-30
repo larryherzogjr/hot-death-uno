@@ -12,6 +12,7 @@ let catalogList = [];    // ordered, for the rules modal
 let rulesSections = [];
 let prevTopKey = null;   // discard top, to animate when it changes
 let chatMsgs = [];       // chat history
+let me = null;           // /api/me: auth status
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,6 +35,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeRul
 
 window.addEventListener("load", async () => {
   loadCatalog();
+  await loadAuth();
   try {
     const cfg = await (await fetch("/api/config")).json();
     if (cfg.passcode_required) {
@@ -43,9 +45,36 @@ window.addEventListener("load", async () => {
     }
   } catch (e) { /* config is best-effort */ }
 
+  if (location.search.includes("login=denied")) setConn("that account isn't allowed", "bad");
+  else if (location.search.includes("login=failed")) setConn("sign-in failed", "bad");
+
   const m = location.hash.match(/game=([\w-]+)/);
   if (m) { gameId = m[1]; joinAndConnect(); }
 });
+
+// Pull auth status; render the sign-in control and adapt the name field.
+async function loadAuth() {
+  try { me = await (await fetch("/api/me")).json(); }
+  catch (e) { me = { oauth_enabled: false, authenticated: false }; }
+  renderAuth();
+}
+
+function renderAuth() {
+  const el = $("auth");
+  const name = $("nameInput");
+  if (!el) return;
+  if (!me || !me.oauth_enabled) { el.innerHTML = ""; name.hidden = false; name.disabled = false; return; }
+  if (me.authenticated) {
+    el.innerHTML = `<span>Hi, <b>${esc(me.name)}</b></span> <a href="/auth/logout">Sign out</a>`;
+    name.value = me.name || "";
+    name.hidden = true;          // identity comes from the Google profile
+    name.disabled = true;
+  } else {
+    el.innerHTML = `<a class="signin" href="/auth/login">Sign in with Google</a>`;
+    name.hidden = !!me.require_login;   // must sign in — hide the manual name field
+    name.disabled = false;
+  }
+}
 
 async function loadCatalog() {
   try {
@@ -58,6 +87,7 @@ async function loadCatalog() {
 }
 
 async function newGame(numPlayers, numHumans) {
+  if (needsLogin()) { setConn("sign in to play", "bad"); return; }
   numHumans = Math.min(numHumans, numPlayers);
   const headers = { "Content-Type": "application/json" };
   const pc = $("passcode");
@@ -85,6 +115,7 @@ async function joinAndConnect() {
       body: JSON.stringify({ player_token: stored || undefined, name: myName() }),
     });
   } catch (e) { setConn("join failed", "bad"); return; }
+  if (r.status === 401) { setConn("sign in to play", "bad"); showIntro("Sign in with Google to join this game."); return; }
   if (r.status === 404) { setConn("game not found", "bad"); showIntro("That game no longer exists."); return; }
   if (r.status === 409) { setConn("game full", "bad"); showIntro("This game is full — every human seat is taken."); return; }
   if (!r.ok) { setConn("join failed", "bad"); return; }
@@ -132,7 +163,11 @@ function connect() {
   };
 }
 
-function myName() { return $("nameInput").value.trim(); }
+function myName() {
+  if (me && me.authenticated && me.name) return me.name;
+  return $("nameInput").value.trim();
+}
+function needsLogin() { return !!(me && me.require_login && !me.authenticated); }
 function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
 
 function renderChat() {
@@ -266,16 +301,18 @@ function renderLobby(st) {
   const humans = new Set(st.human_seats);
   const claimed = new Set(st.claimed_seats);
   const total = Object.keys(st.scores).length;
+  const names = (snap && snap.status && snap.status.names) || {};
   const roles = [];
   for (let i = 0; i < total; i++) {
     let role;
     if (i === mySeat) role = "you";
     else if (!humans.has(i)) role = "AI";
-    else role = claimed.has(i) ? "human" : "waiting…";
-    roles.push(`<span class="${role === "waiting…" ? "wait" : ""}">P${i}: ${role}</span>`);
+    else role = claimed.has(i) ? "joined" : "waiting…";
+    const label = names[i] ? esc(names[i]) : "P" + i;
+    roles.push(`<span class="${role === "waiting…" ? "wait" : ""}">${label}: ${role}</span>`);
   }
   $("lobby").innerHTML =
-    `<span>You are <b>Player ${mySeat}</b></span>` +
+    `<span>You are <b>${esc(names[mySeat] || "Player " + mySeat)}</b></span>` +
     `<span class="seats">${roles.join(" · ")}</span>` +
     `<button id="copyBtn" class="copy">Copy invite link</button>`;
   $("copyBtn").onclick = () => {

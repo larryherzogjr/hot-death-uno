@@ -13,6 +13,13 @@ services:
       # Set these in a `.env` file next to this compose file (auto-loaded).
       - HDU_PASSCODE=${HDU_PASSCODE:-}   # single shared code; empty = open
       - HDU_AI_DELAY=${HDU_AI_DELAY:-1.2}  # seconds between AI moves
+      # Google OAuth sign-in (optional). Blank id/secret = disabled.
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - HDU_BASE_URL=${HDU_BASE_URL:-}
+      - HDU_SESSION_SECRET=${HDU_SESSION_SECRET:-}
+      - HDU_REQUIRE_LOGIN=${HDU_REQUIRE_LOGIN:-}
+      - HDU_ALLOWED_EMAILS=${HDU_ALLOWED_EMAILS:-}
       # Multiple access codes, hand-out/revoke live by editing the file. To use:
       # create ./tokens.txt, then uncomment the volume below and set this.
       # - HDU_TOKENS_FILE=/data/tokens.txt

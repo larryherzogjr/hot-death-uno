@@ -280,6 +280,10 @@ class SessionManager:
         session = GameSession(
             game_id=game_id, state=state, human_seats=human_seats, ai=ai, seed=seed
         )
+        # Name the AI seats so the table reads names throughout (humans get their
+        # name on claim_seat).
+        for n, seat in enumerate(sorted(ai), start=1):
+            session.seat_names[seat] = f"Bot {n}"
         # Drive any AI seats that act before the first human turn.
         session._advance()
         self._games[game_id] = session

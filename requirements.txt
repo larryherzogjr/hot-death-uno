@@ -3,3 +3,8 @@
 # pyproject.toml [project.optional-dependencies].dev and are NOT installed here.
 fastapi==0.138.2
 uvicorn[standard]==0.49.0
+# Google OAuth sign-in (optional feature; imported by server/auth.py). Authlib
+# pulls in httpx; itsdangerous backs Starlette's signed session cookie.
+authlib==1.7.2
+itsdangerous==2.2.0
+httpx==0.28.1

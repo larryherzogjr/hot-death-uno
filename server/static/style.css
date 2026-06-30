@@ -37,6 +37,15 @@ header h1 { font-size: 1.15rem; margin: 0; letter-spacing: 0.5px; }
 .newgame button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
 .passcode { width: 110px; }
 .nameinput { width: 120px; font: inherit; padding: 0.35rem 0.6rem; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
+.nameinput:disabled { opacity: 0.7; }
+.auth { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 0.5rem; }
+.auth b { color: var(--text); }
+.auth a { color: var(--accent); text-decoration: none; }
+.auth .signin {
+  display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;
+  padding: 0.35rem 0.7rem; border-radius: 6px; border: 1px solid var(--line);
+  background: #fff; color: #1f2733; font-weight: 600;
+}
 
 .chat { margin-top: 1.2rem; }
 .chat h2 { font-size: 0.95rem; color: var(--muted); margin: 0 0 0.5rem; }

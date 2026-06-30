@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -26,9 +27,12 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.middleware.sessions import SessionMiddleware
+
+from . import auth
 
 from .catalog import catalog_payload
 from .serialize import decode_action, encode_actions, encode_events, encode_view
@@ -49,6 +53,13 @@ app.add_middleware(
     allow_origins=["*"],  # fine for self-hosted user testing
     allow_methods=["*"],
     allow_headers=["*"],
+)
+# Signs the session cookie used for OAuth. Set HDU_SESSION_SECRET for logins to
+# survive restarts; otherwise a random per-process secret is used.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.environ.get("HDU_SESSION_SECRET") or secrets.token_urlsafe(32),
+    same_site="lax",
 )
 
 
@@ -107,6 +118,58 @@ async def get_config() -> dict[str, Any]:
 async def get_cards() -> dict[str, Any]:
     """Static card catalog + rules primer for the rules page and tooltips."""
     return catalog_payload()
+
+
+# --------------------------------------------------------------------------- #
+# Google OAuth (optional). Identity only: a verified first name. Access is still
+# gated by the passcode/token list unless HDU_REQUIRE_LOGIN makes sign-in
+# mandatory. All endpoints no-op gracefully when OAuth isn't configured.
+# --------------------------------------------------------------------------- #
+
+@app.get("/api/me")
+async def api_me(request: Request) -> dict[str, Any]:
+    user = auth.current_user(request)
+    return {
+        "authenticated": bool(user),
+        "name": auth.session_name(user),
+        "email": (user or {}).get("email"),
+        "oauth_enabled": auth.oauth_enabled(),
+        "require_login": auth.require_login(),
+    }
+
+
+@app.get("/auth/login")
+async def auth_login(request: Request):
+    if not auth.oauth_enabled():
+        raise HTTPException(status_code=404, detail="OAuth is not configured")
+    return await auth.google().authorize_redirect(request, auth.callback_url(request))
+
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    if not auth.oauth_enabled():
+        raise HTTPException(status_code=404, detail="OAuth is not configured")
+    try:
+        token = await auth.google().authorize_access_token(request)
+    except Exception:  # noqa: BLE001 — bad/expired code, user cancelled, etc.
+        return RedirectResponse("/?login=failed")
+    info = token.get("userinfo") or {}
+    if not auth.email_allowed(info.get("email")):
+        request.session.pop("user", None)
+        return RedirectResponse("/?login=denied")
+    request.session["user"] = {
+        "name": info.get("name"),
+        "given_name": info.get("given_name"),
+        "email": info.get("email"),
+        "sub": info.get("sub"),
+    }
+    return RedirectResponse("/")
+
+
+@app.get("/auth/logout")
+async def auth_logout(request: Request):
+    request.session.pop("user", None)
+    return RedirectResponse("/")
 
 
 # --------------------------------------------------------------------------- #
@@ -181,9 +244,13 @@ class CreateGameRequest(BaseModel):
 
 @app.post("/api/games")
 async def create_game(
+    request: Request,
     req: CreateGameRequest,
     x_hdu_passcode: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    user = auth.current_user(request)
+    if auth.require_login() and user is None:
+        raise HTTPException(status_code=401, detail="sign-in required")
     if not _passcode_ok(x_hdu_passcode):
         raise HTTPException(status_code=401, detail="bad or missing passcode")
     if req.num_humans > req.num_players:
@@ -195,7 +262,8 @@ async def create_game(
         human_seats=set(range(req.num_humans)),
         seed=req.seed,
     )
-    seat, token = session.claim_seat(name=req.name)  # the creator is seated first (seat 0)
+    name = auth.session_name(user) or req.name  # verified name wins
+    seat, token = session.claim_seat(name=name)  # the creator is seated first (seat 0)
     return {
         "game_id": session.game_id,
         "seat": seat,
@@ -210,9 +278,13 @@ class JoinRequest(BaseModel):
 
 
 @app.post("/api/games/{game_id}/join")
-async def join_game(game_id: str, req: JoinRequest) -> dict[str, Any]:
+async def join_game(request: Request, game_id: str, req: JoinRequest) -> dict[str, Any]:
+    user = auth.current_user(request)
+    if auth.require_login() and user is None:
+        raise HTTPException(status_code=401, detail="sign-in required")
     session = manager.get(game_id)
-    seat, token = session.claim_seat(req.player_token, name=req.name)
+    name = auth.session_name(user) or req.name
+    seat, token = session.claim_seat(req.player_token, name=name)
     await hub.broadcast(game_id, session, [])  # let seated players see the lobby fill
     return {"seat": seat, "player_token": token, "status": session.public_status()}
 

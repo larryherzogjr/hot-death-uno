@@ -107,3 +107,32 @@ git pull && docker compose up -d --build
     affect the others. `tokens.txt` is gitignored.
 
   The SPA prompts for a code whenever the gate is active; empty leaves it open.
+
+## Google sign-in (optional)
+
+Lets players sign in with Google so their **verified first name** is used at the
+table (instead of typing one). Identity only — it does **not** replace the
+passcode gate unless you set `HDU_REQUIRE_LOGIN`. Leave the client id/secret
+blank to disable sign-in entirely (the app runs exactly as before).
+
+1. **Create an OAuth client** in [Google Cloud Console](https://console.cloud.google.com/)
+   → *APIs & Services* → *Credentials* → *Create credentials* → *OAuth client ID*:
+   - Application type: **Web application**
+   - Authorized redirect URI: **`https://hdu.ospdy.com/auth/callback`**
+   - (Configure the OAuth consent screen first if prompted; "External" + your
+     own email as a test user is enough for a private game.)
+2. **Set the env** in `.env` (next to `docker-compose.yml`):
+   ```ini
+   GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=...
+   HDU_BASE_URL=https://hdu.ospdy.com
+   HDU_SESSION_SECRET=<python -c "import secrets; print(secrets.token_urlsafe(32))">
+   # optional:
+   HDU_REQUIRE_LOGIN=1                  # force sign-in to create/join a game
+   HDU_ALLOWED_EMAILS=a@x.com,b@x.com   # restrict who may sign in
+   ```
+   `HDU_SESSION_SECRET` must be a **stable** value, or every deploy logs everyone
+   out. `HDU_BASE_URL` is what makes the callback URL correct behind the nginx
+   proxy. All OAuth vars are already wired into `docker-compose.yml`.
+3. `docker compose up -d --build`. A **Sign in with Google** button appears in the
+   header; once signed in, the name field is replaced by the Google first name.

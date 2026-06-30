@@ -135,7 +135,8 @@ def test_names_and_chat():
     g = SessionManager().create_game(num_players=4, human_seats={0, 1}, seed=1)
     g.claim_seat(name="Alice")
     g.claim_seat(name="  Bob  ")
-    assert g.public_status()["names"] == {0: "Alice", 1: "Bob"}  # trimmed
+    # Humans get their claimed name; the AI seats are auto-named.
+    assert g.public_status()["names"] == {0: "Alice", 1: "Bob", 2: "Bot 1", 3: "Bot 2"}  # trimmed
 
     msg = g.add_chat(0, "  hi there  ")
     assert msg == {"seat": 0, "name": "Alice", "text": "hi there"}
