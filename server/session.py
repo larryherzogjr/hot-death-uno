@@ -146,9 +146,9 @@ class GameSession:
 
     # -- writes ------------------------------------------------------------- #
 
-    def submit(self, seat: int, action: Action) -> list[Event]:
-        """Apply a human action, then drive AI seats / settle until the next
-        human turn or game end. Returns the events produced by this submission."""
+    def apply_human(self, seat: int, action: Action) -> list[Event]:
+        """Apply exactly one human action — no AI advance. Lets the app layer
+        pace the AI cascade afterwards via :meth:`advance_one`."""
         self._check_seat(seat)
         if seat not in self.human_seats:
             raise SeatError(f"seat {seat} is not a human seat")
@@ -158,49 +158,62 @@ class GameSession:
             raise NotYourTurn(f"it is seat {self.state.to_act}'s turn, not {seat}")
         if action not in legal_actions(self.state):
             raise IllegalAction(f"{action!r} is not legal right now")
-
-        start = len(self.event_log)
         self.state, events = apply(self.state, action)
         self.event_log.extend(events)
-        self._advance()
-        return self.event_log[start:]
+        return list(events)
 
-    def continue_hand(self, seat: int) -> list[Event]:
-        """Acknowledge a finished hand and deal the next one (or end the game).
-        Any human seat may trigger it. Returns the events produced."""
+    def settle_pending(self, seat: int) -> list[Event]:
+        """Settle a finished hand (one step) — no AI advance. The next hand's AI
+        cascade is then paced via :meth:`advance_one`."""
         self._check_seat(seat)
         if seat not in self.human_seats:
             raise SeatError(f"seat {seat} is not a human seat")
         if self.state.phase is not Phase.HAND_OVER:
             raise NotYourTurn("there is no finished hand to continue")
-        start = len(self.event_log)
         self.state, events = settle_hand(self.state)
         self.event_log.extend(events)
+        return list(events)
+
+    def advance_one(self) -> list[Event] | None:
+        """Perform the *next single* AI move or auto-settle, returning its events.
+        Returns None when a human must act, the game is over, or a hand-over is
+        paused for human review. Driving these one at a time (with a delay
+        between) is what lets clients watch each AI play its card."""
+        phase = self.state.phase
+        if phase is Phase.GAME_OVER:
+            return None
+        if phase is Phase.HAND_OVER:
+            if self.human_seats:
+                return None  # pause for humans; settle_pending() resumes
+            self.state, events = settle_hand(self.state)
+            self.event_log.extend(events)
+            return list(events)
+        seat = self.state.to_act
+        if seat in self.human_seats:
+            return None  # wait for a human action
+        action = self.ai[seat].decide(view_for(self.state, seat), legal_actions(self.state))
+        self.state, events = apply(self.state, action)
+        self.event_log.extend(events)
+        return list(events)
+
+    # Synchronous convenience (tests / non-paced callers): apply + drain the AI.
+
+    def submit(self, seat: int, action: Action) -> list[Event]:
+        start = len(self.event_log)
+        self.apply_human(seat, action)
+        self._advance()
+        return self.event_log[start:]
+
+    def continue_hand(self, seat: int) -> list[Event]:
+        start = len(self.event_log)
+        self.settle_pending(seat)
         self._advance()
         return self.event_log[start:]
 
     def _advance(self) -> None:
-        """Run AI seats until a human must act, the game ends, or a hand ends.
-
-        With human seats, a finished hand *pauses* here so players can read the
-        scoring; an explicit :meth:`continue_hand` settles it and deals the next.
-        An all-AI game (no human seats) auto-settles straight through."""
         for _ in range(_MAX_ADVANCE):
-            phase = self.state.phase
-            if phase is Phase.GAME_OVER:
+            if self.advance_one() is None:
                 return
-            if phase is Phase.HAND_OVER:
-                if self.human_seats:
-                    return  # pause for humans; continue_hand() resumes
-                self.state, events = settle_hand(self.state)
-                self.event_log.extend(events)
-                continue
-            seat = self.state.to_act
-            if seat in self.human_seats:
-                return  # wait for a human submission
-            action = self.ai[seat].decide(view_for(self.state, seat), legal_actions(self.state))
-            self.state, events = apply(self.state, action)
-            self.event_log.extend(events)
         raise RuntimeError("session drive loop exceeded its ceiling — likely a bug")
 
     def _check_seat(self, seat: int) -> None:

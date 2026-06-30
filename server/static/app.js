@@ -10,6 +10,7 @@ let logLines = [];
 let catalog = {};        // card id -> info, for tooltips
 let catalogList = [];    // ordered, for the rules modal
 let rulesSections = [];
+let prevTopKey = null;   // discard top, to animate when it changes
 
 const $ = (id) => document.getElementById(id);
 
@@ -126,6 +127,15 @@ function continueHand() {
 }
 function setConn(text, cls) { const el = $("conn"); el.textContent = text; el.className = "conn " + cls; }
 
+let toastTimer = null;
+function flashToast(text) {
+  const t = $("toast");
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 1400);
+}
+
 // --- rendering --------------------------------------------------------------
 function pname(id) { return id === mySeat ? "You" : "P" + id; }
 
@@ -141,9 +151,25 @@ function cardEl(card, small) {
     n.className = "num";
     n.textContent = card.number;
     div.appendChild(n);
+    if (!small) for (const pos of ["tl", "br"]) {
+      const p = document.createElement("div");
+      p.className = "pip " + pos;
+      p.textContent = card.number;
+      div.appendChild(p);
+    }
   }
   attachTip(div, card, small);
   return div;
+}
+
+function backEl(small) {
+  const d = document.createElement("div");
+  d.className = "back" + (small ? " small" : "");
+  return d;
+}
+
+function topKey(top) {
+  return [top.card.id, top.card.color, top.card.number, top.eff_color].join("|");
 }
 
 // --- card tooltips ----------------------------------------------------------
@@ -250,7 +276,7 @@ function render() {
     `<span>Draw pile: <b>${snap.view.draw_count}</b></span>` +
     `<span>Scores: ${Object.entries(st.scores).map(([k, v]) => `${pname(+k)} ${v}`).join(" · ")}</span>`;
 
-  // opponents
+  // opponents — name, flags, and a little fan of face-down cards
   const opp = $("opponents");
   opp.innerHTML = "";
   for (const o of snap.view.opponents) {
@@ -259,35 +285,61 @@ function render() {
     const tags = [];
     if (o.called_uno) tags.push('<span class="tag-uno">UNO!</span>');
     if (o.eliminated) tags.push("eliminated");
-    div.innerHTML = `<div><b>${pname(o.id)}</b> — ${o.hand_count} cards</div>` +
+    div.innerHTML =
+      `<div class="who">${pname(o.id)} · ${o.hand_count}</div>` +
       `<div class="tags">${tags.join(" · ") || "&nbsp;"}</div>`;
     if (o.revealed_hand) {
       const rev = document.createElement("div");
       rev.className = "revealed";
       o.revealed_hand.forEach((c) => rev.appendChild(cardEl(c, true)));
       div.appendChild(rev);
+    } else {
+      const fan = document.createElement("div");
+      fan.className = "fan";
+      for (let i = 0; i < Math.min(o.hand_count, 7); i++) fan.appendChild(backEl(true));
+      div.appendChild(fan);
     }
     opp.appendChild(div);
   }
 
-  // discard top
-  const disc = $("discard");
-  disc.innerHTML = "";
-  disc.appendChild(cardEl(snap.view.top.card, false));
-  const now = document.createElement("div");
-  now.className = "now";
-  now.innerHTML = `top of pile<br>active color: <b>${snap.view.top.eff_color}</b>`;
-  disc.appendChild(now);
-
-  $("pending").textContent = describePending(snap.view.pending);
-
-  // legal actions -> clickable cards + buttons
+  // legal actions -> clickable cards, draw-pile, buttons
   const cardActions = {};
   const buttons = [];
+  let canDraw = false;
   for (const a of snap.legal_actions) {
     if (a.type === "play_card" || a.type === "reveal") cardActions[a.hand_index] = a;
+    else if (a.type === "draw_card") canDraw = true;
     else buttons.push(a);
   }
+
+  // draw pile — a face-down deck; click to draw when it's your turn
+  const draw = $("drawpile");
+  draw.innerHTML = "";
+  const deckN = Math.min(snap.view.draw_count, 4);
+  for (let i = 0; i < Math.max(deckN, 1); i++) {
+    const b = backEl(false);
+    b.style.transform = `translate(${i}px, ${-i}px)`;
+    draw.appendChild(b);
+  }
+  const dlbl = document.createElement("div");
+  dlbl.className = "label";
+  dlbl.textContent = (canDraw && snap.your_turn) ? "Draw" : `${snap.view.draw_count} left`;
+  draw.appendChild(dlbl);
+  draw.classList.toggle("drawable", canDraw && snap.your_turn);
+  draw.onclick = (canDraw && snap.your_turn) ? () => submit({ type: "draw_card" }) : null;
+
+  // discard pile — top card, ringed in the active color, dealt-in when it changes
+  const disc = $("discard");
+  const key = topKey(snap.view.top);
+  const changed = key !== prevTopKey;
+  prevTopKey = key;
+  disc.innerHTML = "";
+  disc.className = "pile discard ring-" + snap.view.top.eff_color.toLowerCase();
+  const topCard = cardEl(snap.view.top.card, false);
+  if (changed) topCard.classList.add("played");
+  disc.appendChild(topCard);
+
+  $("pending").textContent = describePending(snap.view.pending);
 
   const hand = $("hand");
   hand.innerHTML = "";
@@ -388,6 +440,9 @@ function pushEvent(e) {
   const fn = map[e.type];
   const big = ["PlayerWonHand", "HandScored", "GameOver", "BastardHand", "PlayerEliminated"].includes(e.type);
   pushLog(fn ? fn() : e.type, big);
+  if (e.type === "DirectionReversed") flashToast("↺ Direction reversed");
+  else if (e.type === "UnoCalled") flashToast(`${P(e.player)} — UNO!`);
+  else if (e.type === "BastardHand") flashToast("☠ Bastard hand!");
 }
 
 function pushLog(text, big) {

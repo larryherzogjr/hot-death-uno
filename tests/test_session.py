@@ -105,6 +105,20 @@ def test_reconnect_token_returns_same_seat():
     assert g.claim_seat(t0) == (s0, t0)  # reconnect keeps the seat
 
 
+def test_advance_one_steps_the_ai_then_stops_at_the_human():
+    g = SessionManager().create_game(num_players=4, human_seats={0}, seed=9)
+    if g.is_over or g.state.phase is Phase.HAND_OVER:
+        pytest.skip("game ended/paused during setup")
+    g.apply_human(0, g.legal_for_seat(0)[0])  # human acts, no AI advance yet
+    steps = 0
+    while g.advance_one() is not None:  # drive AI one move at a time
+        steps += 1
+        assert steps < 5_000
+        assert card_count(g.state) == 113
+    # Parked again on the human (or terminal / paused) — never mid-AI-turn.
+    assert g.is_over or g.state.phase is Phase.HAND_OVER or g.state.to_act == 0
+
+
 def test_seat_for_token_authorizes():
     g = SessionManager().create_game(num_players=4, human_seats={0}, seed=1)
     seat, token = g.claim_seat()

@@ -35,18 +35,20 @@
   <main id="game" hidden>
     <section id="lobby" class="lobby"></section>
     <section id="status" class="status"></section>
-    <section id="opponents" class="opponents"></section>
 
     <section class="table">
-      <div id="discard" class="discard"></div>
+      <div id="opponents" class="opponents"></div>
+      <div class="play">
+        <div id="drawpile" class="pile" title="Draw pile"></div>
+        <div id="discard" class="pile discard"></div>
+      </div>
       <div id="pending" class="pending"></div>
     </section>
 
-    <section id="actions" class="actions"></section>
-
-    <section class="hand-wrap">
-      <h2>Your hand <span id="turnHint" class="turn-hint"></span></h2>
+    <section class="me">
+      <div class="me-head">Your hand <span id="turnHint" class="turn-hint"></span></div>
       <div id="hand" class="hand"></div>
+      <div id="actions" class="actions"></div>
     </section>
 
     <section class="log-wrap">
@@ -59,6 +61,7 @@
 
   <p id="intro" class="intro">Start a new game — you are <b>Player 0</b> versus AI opponents.</p>
 
+  <div id="toast" class="toast" hidden></div>
   <div id="tip" class="tip" hidden></div>
 
   <div id="rulesModal" class="modal" hidden>

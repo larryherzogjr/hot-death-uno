@@ -11,6 +11,7 @@ from server.app import app, manager
 @pytest.fixture(autouse=True)
 def _clean_manager(monkeypatch):
     monkeypatch.delenv("HDU_PASSCODE", raising=False)  # gate off unless a test sets it
+    monkeypatch.setattr("server.app._AI_DELAY", 0)  # no pacing delay in tests
     manager._games.clear()
     yield
     manager._games.clear()

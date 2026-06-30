@@ -10,6 +10,7 @@ Run locally:  uvicorn server.app:app --reload
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 from pathlib import Path
@@ -118,6 +119,25 @@ def snapshot(session: GameSession, seat: int) -> dict[str, Any]:
     }
 
 
+# Pace AI turns: one move per broadcast, a beat apart, so players watch each AI
+# play its card. Tests set this to 0. A per-game lock keeps two drivers from
+# interleaving (only ever one runs, since a human can't act mid-cascade).
+_AI_DELAY = 0.8
+_drive_locks: dict[str, asyncio.Lock] = {}
+
+
+async def _drive_ai(game_id: str) -> None:
+    session = manager.get(game_id)
+    async with _drive_locks.setdefault(game_id, asyncio.Lock()):
+        while True:
+            events = session.advance_one()
+            if events is None:
+                break
+            await hub.broadcast(game_id, session, events)
+            if _AI_DELAY:
+                await asyncio.sleep(_AI_DELAY)
+
+
 # --------------------------------------------------------------------------- #
 # REST
 # --------------------------------------------------------------------------- #
@@ -199,8 +219,9 @@ async def post_action(
 ) -> dict[str, Any]:
     session = manager.get(game_id)
     seat = _seat_of(session, x_hdu_player)
-    events = session.submit(seat, decode_action(action.model_dump(exclude_none=True)))
-    await hub.broadcast(game_id, session, events)
+    events = session.apply_human(seat, decode_action(action.model_dump(exclude_none=True)))
+    await hub.broadcast(game_id, session, events)  # show the human's move at once
+    await _drive_ai(game_id)  # then pace the AI cascade
     return {"events": encode_events(events), "snapshot": snapshot(session, seat)}
 
 
@@ -211,8 +232,9 @@ async def post_continue(
     """Acknowledge an end-of-hand pause and deal the next hand."""
     session = manager.get(game_id)
     seat = _seat_of(session, x_hdu_player)
-    events = session.continue_hand(seat)
+    events = session.settle_pending(seat)
     await hub.broadcast(game_id, session, events)
+    await _drive_ai(game_id)
     return {"events": encode_events(events), "snapshot": snapshot(session, seat)}
 
 
@@ -276,13 +298,14 @@ async def game_ws(websocket: WebSocket, game_id: str, token: str = Query(...)) -
             if kind in ("action", "continue"):
                 try:
                     if kind == "action":
-                        events = session.submit(seat, decode_action(msg["action"]))
+                        events = session.apply_human(seat, decode_action(msg["action"]))
                     else:
-                        events = session.continue_hand(seat)
+                        events = session.settle_pending(seat)
                 except SessionError as exc:
                     await websocket.send_json({"type": "error", "detail": str(exc)})
                     continue
-                await hub.broadcast(game_id, session, events)
+                await hub.broadcast(game_id, session, events)  # human's move
+                await _drive_ai(game_id)  # paced AI cascade
             # other message types (e.g. "ping") are ignored for now
     except WebSocketDisconnect:
         pass
