@@ -263,6 +263,21 @@ def test_name_recorded_and_chat_broadcasts(client):
         assert m["message"] == {"seat": 0, "name": "Alice", "text": "hello table"}
 
 
+def test_humans_watching_drives_pacing(client):
+    # Pacing is skipped once no human is left in the hand, so an all-AI tail
+    # plays out instantly instead of a beat per move.
+    import dataclasses
+
+    from server.app import _humans_watching
+
+    g = manager.create_game(num_players=4, human_seats={0}, seed=3)
+    assert _humans_watching(g) is True
+    players = list(g.state.players)
+    players[0] = dataclasses.replace(players[0], eliminated=True)  # human knocked out
+    g.state = dataclasses.replace(g.state, players=tuple(players))
+    assert _humans_watching(g) is False
+
+
 def test_websocket_rejects_bad_token(client):
     g = _new_game(client)
     with pytest.raises(Exception):  # connection closed (4401) before any message

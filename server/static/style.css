@@ -210,8 +210,17 @@ main { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
 .log .big { color: var(--text); font-weight: 600; }
 
 .banner {
-  margin-top: 1.2rem; padding: 1rem 1.2rem; border-radius: 10px;
+  position: fixed; z-index: 40;
+  top: 84px; left: 50%; transform: translateX(-50%);
+  width: min(560px, calc(100% - 2rem));
+  padding: 1rem 1.2rem; border-radius: 10px;
   background: var(--panel); border: 1px solid var(--accent); text-align: center;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.55);
+  animation: bannerIn .28s cubic-bezier(.2,.7,.3,1.2);
+}
+@keyframes bannerIn {
+  from { transform: translate(-50%, -10px); opacity: 0; }
+  to   { transform: translate(-50%, 0); opacity: 1; }
 }
 .banner h2 { margin: 0 0 0.5rem; color: var(--accent); }
 .banner button {

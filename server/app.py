@@ -213,6 +213,14 @@ _AI_DELAY = float(os.environ.get("HDU_AI_DELAY", "1.2"))
 _drive_locks: dict[str, asyncio.Lock] = {}
 
 
+def _humans_watching(session: GameSession) -> bool:
+    """Whether any human seat is still active in the current hand. When every
+    human is eliminated there's no one to watch, so the rest of the hand plays
+    out instantly instead of a beat per AI move."""
+    players = session.state.players
+    return any(not players[s].eliminated for s in session.human_seats)
+
+
 async def _drive_ai(game_id: str) -> None:
     session = manager.get(game_id)
     async with _drive_locks.setdefault(game_id, asyncio.Lock()):
@@ -221,7 +229,7 @@ async def _drive_ai(game_id: str) -> None:
             if events is None:
                 break
             await hub.broadcast(game_id, session, events)
-            if _AI_DELAY:
+            if _AI_DELAY and _humans_watching(session):
                 await asyncio.sleep(_AI_DELAY)
 
 
