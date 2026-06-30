@@ -4,7 +4,7 @@
     {
       "name": "hdu-web",
       "runtimeExecutable": ".venv/bin/uvicorn",
-      "runtimeArgs": ["server.app:app", "--port", "8126"],
+      "runtimeArgs": ["server.app:app", "--port", "8126", "--reload"],
       "port": 8126
     }
   ]

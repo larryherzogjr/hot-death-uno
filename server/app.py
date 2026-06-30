@@ -10,10 +10,19 @@ Run locally:  uvicorn server.app:app --reload
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -39,6 +48,22 @@ app.add_middleware(
 )
 
 manager = SessionManager()
+
+
+# --------------------------------------------------------------------------- #
+# Passcode gate (optional). Set HDU_PASSCODE to require a shared code to *create*
+# games; existing games are reached via their unguessable id, so only creation
+# is gated. Unset/empty => no gate (open, e.g. for local dev and tests).
+# --------------------------------------------------------------------------- #
+
+def _passcode_ok(provided: str | None) -> bool:
+    required = os.environ.get("HDU_PASSCODE", "")
+    return (not required) or provided == required
+
+
+@app.get("/api/config")
+async def get_config() -> dict[str, Any]:
+    return {"passcode_required": bool(os.environ.get("HDU_PASSCODE", ""))}
 
 
 # --------------------------------------------------------------------------- #
@@ -69,6 +94,7 @@ def snapshot(session: GameSession, seat: int) -> dict[str, Any]:
         "view": encode_view(session.view_for_seat(seat)),
         "legal_actions": encode_actions(session.legal_for_seat(seat)),
         "your_turn": (not session.is_over) and session.state.to_act == seat,
+        "hand_result": session.hand_result(),  # set only at an end-of-hand pause
     }
 
 
@@ -84,7 +110,12 @@ class CreateGameRequest(BaseModel):
 
 
 @app.post("/api/games")
-async def create_game(req: CreateGameRequest) -> dict[str, Any]:
+async def create_game(
+    req: CreateGameRequest,
+    x_hdu_passcode: str | None = Header(default=None),
+) -> dict[str, Any]:
+    if not _passcode_ok(x_hdu_passcode):
+        raise HTTPException(status_code=401, detail="bad or missing passcode")
     session = manager.create_game(
         num_players=req.num_players,
         hand_size=req.hand_size,
@@ -121,6 +152,15 @@ class ActionRequest(BaseModel):
 async def post_action(game_id: str, seat: int, action: ActionRequest) -> dict[str, Any]:
     session = manager.get(game_id)
     events = session.submit(seat, decode_action(action.model_dump(exclude_none=True)))
+    await hub.broadcast(game_id, session, events)
+    return {"events": encode_events(events), "snapshot": snapshot(session, seat)}
+
+
+@app.post("/api/games/{game_id}/continue")
+async def post_continue(game_id: str, seat: int) -> dict[str, Any]:
+    """Acknowledge an end-of-hand pause and deal the next hand."""
+    session = manager.get(game_id)
+    events = session.continue_hand(seat)
     await hub.broadcast(game_id, session, events)
     return {"events": encode_events(events), "snapshot": snapshot(session, seat)}
 
@@ -177,9 +217,13 @@ async def game_ws(websocket: WebSocket, game_id: str, seat: int = Query(...)) ->
         await websocket.send_json({"type": "snapshot", "snapshot": snapshot(session, seat)})
         while True:
             msg = await websocket.receive_json()
-            if msg.get("type") == "action":
+            kind = msg.get("type")
+            if kind in ("action", "continue"):
                 try:
-                    events = session.submit(seat, decode_action(msg["action"]))
+                    if kind == "action":
+                        events = session.submit(seat, decode_action(msg["action"]))
+                    else:
+                        events = session.continue_hand(seat)
                 except SessionError as exc:
                     await websocket.send_json({"type": "error", "detail": str(exc)})
                     continue

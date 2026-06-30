@@ -95,5 +95,8 @@ git pull && docker compose up -d --build
   `SessionManager` is kept behind one interface to make that swap clean).
 - The published Docker port is bound to `127.0.0.1`, so the app is reachable
   **only** via nginx, never directly from the internet.
-- No accounts/auth yet — anyone with the link can create/play games. Add a
-  basic-auth block in nginx or a shared passcode if you want to gate testers.
+- **Gating testers:** set a shared passcode so only people with the code can
+  create games. Copy `.env.example` to `.env` next to `docker-compose.yml` and
+  set `HDU_PASSCODE=yourcode`, then `docker compose up -d`. The SPA prompts for
+  it; empty/unset leaves the server open. (Existing games are reached via their
+  unguessable id, so only *creation* is gated.)

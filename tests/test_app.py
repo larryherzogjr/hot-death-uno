@@ -9,7 +9,8 @@ from server.app import app, manager
 
 
 @pytest.fixture(autouse=True)
-def _clean_manager():
+def _clean_manager(monkeypatch):
+    monkeypatch.delenv("HDU_PASSCODE", raising=False)  # gate off unless a test sets it
     manager._games.clear()
     yield
     manager._games.clear()
@@ -47,20 +48,54 @@ def test_state_is_redacted_for_the_seat(client):
 def test_play_a_full_game_over_rest(client):
     gid = _new_game(client)["game_id"]
     guard = 0
+    saw_pause = False
     while True:
         guard += 1
-        assert guard < 10_000
+        assert guard < 20_000
         snap = client.get(f"/api/games/{gid}/state", params={"seat": 0}).json()
-        if snap["status"]["phase"] == "game_over":
+        phase = snap["status"]["phase"]
+        if phase == "game_over":
             break
+        if phase == "hand_over":
+            saw_pause = True
+            assert snap["hand_result"] is not None
+            r = client.post(f"/api/games/{gid}/continue", params={"seat": 0})
+            assert r.status_code == 200
+            continue
         assert snap["your_turn"] is True
-        action = snap["legal_actions"][0]
-        r = client.post(f"/api/games/{gid}/action", params={"seat": 0}, json=action)
+        r = client.post(f"/api/games/{gid}/action", params={"seat": 0}, json=snap["legal_actions"][0])
         assert r.status_code == 200
-        assert "events" in r.json()
     final = client.get(f"/api/games/{gid}/state", params={"seat": 0}).json()
     assert final["status"]["winner"] is not None
     assert final["status"]["card_count"] == 113
+    assert saw_pause  # the game paused between hands at least once
+
+
+def test_passcode_gate(client, monkeypatch):
+    monkeypatch.setenv("HDU_PASSCODE", "letmein")
+    assert client.get("/api/config").json()["passcode_required"] is True
+    # missing or wrong passcode is rejected
+    assert client.post("/api/games", json={"seed": 1}).status_code == 401
+    assert client.post(
+        "/api/games", json={"seed": 1}, headers={"X-HDU-Passcode": "nope"}
+    ).status_code == 401
+    # correct passcode works
+    ok = client.post("/api/games", json={"seed": 1}, headers={"X-HDU-Passcode": "letmein"})
+    assert ok.status_code == 200
+
+
+def test_no_passcode_required_when_unset(client):
+    assert client.get("/api/config").json()["passcode_required"] is False
+    assert client.post("/api/games", json={"seed": 1}).status_code == 200
+
+
+def test_continue_without_finished_hand_is_rejected(client):
+    gid = _new_game(client)["game_id"]
+    snap = client.get(f"/api/games/{gid}/state", params={"seat": 0}).json()
+    if snap["status"]["phase"] in ("hand_over", "game_over"):
+        pytest.skip("paused/over at setup")
+    r = client.post(f"/api/games/{gid}/continue", params={"seat": 0})
+    assert r.status_code == 409  # NotYourTurn
 
 
 def test_unknown_game_is_404(client):

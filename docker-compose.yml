@@ -9,3 +9,7 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8126:8000"
+    environment:
+      # Shared passcode required to create games. Set it in a `.env` file next to
+      # this compose file (docker compose loads it automatically). Empty = open.
+      - HDU_PASSCODE=${HDU_PASSCODE:-}

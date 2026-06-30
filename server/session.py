@@ -24,6 +24,7 @@ from hdu.actions import Action
 from hdu.engine import apply, card_count, legal_actions, new_hand, settle_hand
 from hdu.events import Event
 from hdu.players.random_ai import RandomAI
+from hdu.scoring import score_hand
 from hdu.state import GameState, Phase
 from hdu.view import PlayerView, view_for
 
@@ -86,6 +87,15 @@ class GameSession:
         cursor = max(0, min(cursor, len(self.event_log)))
         return self.event_log[cursor:], len(self.event_log)
 
+    def hand_result(self) -> dict | None:
+        """At a hand-over pause, a preview of this hand's scoring (winner + the
+        points each player gains) for display before the next deal. None unless
+        we're paused between hands."""
+        if self.state.phase is not Phase.HAND_OVER:
+            return None
+        gains = score_hand(self.state)
+        return {"winner": self.state.winner, "gains": {i: gains[i] for i in gains}}
+
     def public_status(self) -> dict:
         s = self.state
         return {
@@ -124,14 +134,33 @@ class GameSession:
         self._advance()
         return self.event_log[start:]
 
+    def continue_hand(self, seat: int) -> list[Event]:
+        """Acknowledge a finished hand and deal the next one (or end the game).
+        Any human seat may trigger it. Returns the events produced."""
+        self._check_seat(seat)
+        if seat not in self.human_seats:
+            raise SeatError(f"seat {seat} is not a human seat")
+        if self.state.phase is not Phase.HAND_OVER:
+            raise NotYourTurn("there is no finished hand to continue")
+        start = len(self.event_log)
+        self.state, events = settle_hand(self.state)
+        self.event_log.extend(events)
+        self._advance()
+        return self.event_log[start:]
+
     def _advance(self) -> None:
-        """Run AI seats and auto-settle finished hands until a human must act or
-        the game ends."""
+        """Run AI seats until a human must act, the game ends, or a hand ends.
+
+        With human seats, a finished hand *pauses* here so players can read the
+        scoring; an explicit :meth:`continue_hand` settles it and deals the next.
+        An all-AI game (no human seats) auto-settles straight through."""
         for _ in range(_MAX_ADVANCE):
             phase = self.state.phase
             if phase is Phase.GAME_OVER:
                 return
             if phase is Phase.HAND_OVER:
+                if self.human_seats:
+                    return  # pause for humans; continue_hand() resumes
                 self.state, events = settle_hand(self.state)
                 self.event_log.extend(events)
                 continue

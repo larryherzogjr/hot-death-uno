@@ -29,11 +29,13 @@ def test_all_ai_game_drives_to_completion():
 def test_create_stops_at_the_human_turn():
     mgr = SessionManager()
     g = mgr.create_game(num_players=4, human_seats={0}, seed=5)
-    # The drive loop ran AI seats and parked on the human (unless the game ended).
-    if not g.is_over:
-        assert g.state.to_act == 0
-        assert g.legal_for_seat(0)  # non-empty on your turn
-        assert g.legal_for_seat(1) == []  # not your turn
+    # The drive loop ran AI seats and parked on the human, the game ended, or a
+    # hand ended during setup (an end-of-hand pause) — all valid.
+    if g.is_over or g.state.phase is Phase.HAND_OVER:
+        return
+    assert g.state.to_act == 0
+    assert g.legal_for_seat(0)  # non-empty on your turn
+    assert g.legal_for_seat(1) == []  # not your turn
 
 
 def test_human_plays_a_full_game_randomly():
@@ -43,12 +45,46 @@ def test_human_plays_a_full_game_randomly():
     guard = 0
     while not g.is_over:
         guard += 1
-        assert guard < 10_000
-        assert g.state.to_act == 0  # drive loop only ever parks on the human
-        action = rng.choice(g.legal_for_seat(0))
-        g.submit(0, action)
-        assert card_count(g.state) == 113  # conserved across every submission
+        assert guard < 20_000
+        if g.state.phase is Phase.HAND_OVER:
+            g.continue_hand(0)  # acknowledge the pause and deal the next hand
+        else:
+            assert g.state.to_act == 0  # drive loop only parks on the human
+            g.submit(0, rng.choice(g.legal_for_seat(0)))
+        assert card_count(g.state) == 113  # conserved across every step
     assert g.state.phase is Phase.GAME_OVER
+
+
+def test_hand_over_pauses_for_humans_then_continues():
+    g = SessionManager().create_game(num_players=4, human_seats={0}, seed=9)
+    rng = random.Random(1)
+    saw_pause = False
+    guard = 0
+    while not g.is_over:
+        guard += 1
+        assert guard < 20_000
+        if g.state.phase is Phase.HAND_OVER:
+            saw_pause = True
+            assert g.hand_result() is not None  # scoring preview available
+            assert g.legal_for_seat(0) == []    # no card actions during the pause
+            g.continue_hand(0)
+        else:
+            g.submit(0, rng.choice(g.legal_for_seat(0)))
+    assert saw_pause  # a hand ended and paused rather than auto-dealing
+
+
+def test_continue_requires_a_finished_hand():
+    g = SessionManager().create_game(num_players=4, human_seats={0}, seed=9)
+    if g.state.phase is Phase.HAND_OVER:
+        pytest.skip("paused at setup")
+    with pytest.raises(NotYourTurn):
+        g.continue_hand(0)
+
+
+def test_all_ai_game_does_not_pause():
+    # No human seats -> hands auto-settle straight through to game over.
+    g = SessionManager().create_game(num_players=4, human_seats=set(), seed=3)
+    assert g.is_over and g.hand_result() is None
 
 
 def test_submit_rejects_wrong_seat_and_illegal_action():

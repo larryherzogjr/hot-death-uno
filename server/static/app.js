@@ -12,17 +12,38 @@ const $ = (id) => document.getElementById(id);
 // --- bootstrap --------------------------------------------------------------
 $("newGameBtn").onclick = () => newGame(parseInt($("numPlayers").value, 10));
 
-window.addEventListener("load", () => {
+window.addEventListener("load", async () => {
+  // Show the passcode field if the server requires one to create games.
+  try {
+    const cfg = await (await fetch("/api/config")).json();
+    if (cfg.passcode_required) {
+      const el = $("passcode");
+      el.hidden = false;
+      el.value = localStorage.getItem("hdu_passcode") || "";
+    }
+  } catch (e) { /* config is best-effort */ }
+
   const m = location.hash.match(/game=([\w-]+)/);
   if (m) { gameId = m[1]; connect(); }
 });
 
 async function newGame(numPlayers) {
+  const headers = { "Content-Type": "application/json" };
+  const pc = $("passcode");
+  if (!pc.hidden) {
+    headers["X-HDU-Passcode"] = pc.value;
+    localStorage.setItem("hdu_passcode", pc.value);
+  }
   const r = await fetch("/api/games", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ num_players: numPlayers, human_seats: [SEAT] }),
   });
+  if (r.status === 401) {
+    localStorage.removeItem("hdu_passcode");
+    setConn("wrong passcode", "bad");
+    return;
+  }
   const data = await r.json();
   gameId = data.game_id;
   location.hash = "game=" + gameId;
@@ -60,6 +81,12 @@ function submit(action) {
   }
 }
 
+function continueHand() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "continue" }));
+  }
+}
+
 function setConn(text, cls) {
   const el = $("conn");
   el.textContent = text;
@@ -92,7 +119,7 @@ function render() {
   const st = snap.status;
 
   // status line
-  const turn = st.phase === "game_over" ? "—"
+  const turn = st.to_act === null ? "—"  // null between hands / at game over
     : (st.to_act === SEAT ? "Your turn" : pname(st.to_act) + " to act");
   $("status").innerHTML =
     `<span>Phase: <b>${st.phase}</b></span>` +
@@ -156,7 +183,7 @@ function render() {
   });
   $("turnHint").textContent = snap.your_turn
     ? "— click a highlighted card or pick an action below"
-    : (st.phase === "game_over" ? "" : "— waiting…");
+    : (st.to_act === null ? "" : "— waiting…");
 
   // action buttons
   const actions = $("actions");
@@ -170,7 +197,7 @@ function render() {
   log.innerHTML = logLines.map((l) => `<div class="${l.big ? "big" : ""}">${l.text}</div>`).join("");
   log.scrollTop = log.scrollHeight;
 
-  // game over banner
+  // banner: end-of-hand pause, or game over
   const banner = $("banner");
   if (st.phase === "game_over") {
     banner.hidden = false;
@@ -179,6 +206,16 @@ function render() {
       `<div>${order.map(([k, v], idx) => `${idx + 1}. ${pname(+k)} — ${v}`).join("<br>")}</div>` +
       `<button id="againBtn">New game</button>`;
     $("againBtn").onclick = () => newGame(snap.view.opponents.length + 1);
+  } else if (st.phase === "hand_over" && snap.hand_result) {
+    banner.hidden = false;
+    const hr = snap.hand_result;
+    const who = hr.winner === null ? "No winner (all eliminated)" : `${pname(hr.winner)} won the hand`;
+    const gains = Object.entries(hr.gains)
+      .map(([k, v]) => `${pname(+k)} ${v >= 0 ? "+" : ""}${v}`).join(" · ");
+    banner.innerHTML = `<h2>Hand over — ${who}</h2>` +
+      `<div>this hand: ${gains}</div>` +
+      `<button id="nextBtn">Next hand →</button>`;
+    $("nextBtn").onclick = continueHand;
   } else {
     banner.hidden = true;
   }
