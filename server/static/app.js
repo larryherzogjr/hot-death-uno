@@ -1,19 +1,20 @@
 "use strict";
 
 // --- state ------------------------------------------------------------------
-const SEAT = 0; // single-player: you are always seat 0
 let gameId = null;
+let mySeat = null;       // assigned on join; also synced from snapshot.view.me
+let playerToken = null;
 let ws = null;
-let snap = null;       // latest snapshot for our seat
-const logLines = [];
+let snap = null;
+let logLines = [];
 
 const $ = (id) => document.getElementById(id);
 
 // --- bootstrap --------------------------------------------------------------
-$("newGameBtn").onclick = () => newGame(parseInt($("numPlayers").value, 10));
+$("newGameBtn").onclick = () =>
+  newGame(parseInt($("numPlayers").value, 10), parseInt($("numHumans").value, 10));
 
 window.addEventListener("load", async () => {
-  // Show the passcode field if the server requires one to create games.
   try {
     const cfg = await (await fetch("/api/config")).json();
     if (cfg.passcode_required) {
@@ -24,10 +25,11 @@ window.addEventListener("load", async () => {
   } catch (e) { /* config is best-effort */ }
 
   const m = location.hash.match(/game=([\w-]+)/);
-  if (m) { gameId = m[1]; connect(); }
+  if (m) { gameId = m[1]; joinAndConnect(); }
 });
 
-async function newGame(numPlayers) {
+async function newGame(numPlayers, numHumans) {
+  numHumans = Math.min(numHumans, numPlayers);
   const headers = { "Content-Type": "application/json" };
   const pc = $("passcode");
   if (!pc.hidden) {
@@ -35,27 +37,53 @@ async function newGame(numPlayers) {
     localStorage.setItem("hdu_passcode", pc.value);
   }
   const r = await fetch("/api/games", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ num_players: numPlayers, human_seats: [SEAT] }),
+    method: "POST", headers,
+    body: JSON.stringify({ num_players: numPlayers, num_humans: numHumans }),
   });
-  if (r.status === 401) {
-    localStorage.removeItem("hdu_passcode");
-    setConn("wrong passcode", "bad");
-    return;
-  }
+  if (r.status === 401) { localStorage.removeItem("hdu_passcode"); setConn("wrong passcode", "bad"); return; }
+  if (!r.ok) { setConn("create failed", "bad"); return; }
   const data = await r.json();
-  gameId = data.game_id;
+  setupSeat(data.game_id, data.seat, data.player_token);
+}
+
+// Join an existing game — fresh, or reconnect with a stored token — then connect.
+async function joinAndConnect() {
+  const stored = localStorage.getItem("hdu_token_" + gameId);
+  let r;
+  try {
+    r = await fetch(`/api/games/${gameId}/join`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(stored ? { player_token: stored } : {}),
+    });
+  } catch (e) { setConn("join failed", "bad"); return; }
+  if (r.status === 404) { setConn("game not found", "bad"); showIntro("That game no longer exists."); return; }
+  if (r.status === 409) { setConn("game full", "bad"); showIntro("This game is full — every human seat is taken."); return; }
+  if (!r.ok) { setConn("join failed", "bad"); return; }
+  const data = await r.json();
+  setupSeat(gameId, data.seat, data.player_token);
+}
+
+function setupSeat(gid, seat, token) {
+  gameId = gid;
+  mySeat = seat;
+  playerToken = token;
+  localStorage.setItem("hdu_token_" + gameId, token);
   location.hash = "game=" + gameId;
-  logLines.length = 0;
+  logLines = [];
   connect();
+}
+
+function showIntro(text) {
+  $("intro").hidden = false;
+  $("intro").textContent = text;
+  $("game").hidden = true;
 }
 
 // --- websocket --------------------------------------------------------------
 function connect() {
   if (ws) { try { ws.close(); } catch (e) {} }
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/api/games/${gameId}/ws?seat=${SEAT}`);
+  ws = new WebSocket(`${proto}://${location.host}/api/games/${gameId}/ws?token=${encodeURIComponent(playerToken)}`);
   setConn("connecting…", "");
 
   ws.onopen = () => setConn("connected", "ok");
@@ -63,45 +91,31 @@ function connect() {
   ws.onerror = () => setConn("error", "bad");
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.type === "snapshot") { snap = msg.snapshot; render(); }
+    if (msg.type === "snapshot") { snap = msg.snapshot; mySeat = snap.view.me; render(); }
     else if (msg.type === "update") {
       (msg.events || []).forEach(pushEvent);
-      snap = msg.snapshot;
-      render();
-    } else if (msg.type === "error") {
-      pushLog("⚠ " + msg.detail, true);
-      render();
-    }
+      snap = msg.snapshot; mySeat = snap.view.me; render();
+    } else if (msg.type === "error") { pushLog("⚠ " + msg.detail, true); render(); }
   };
 }
 
 function submit(action) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "action", action }));
-  }
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "action", action }));
 }
-
 function continueHand() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "continue" }));
-  }
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "continue" }));
 }
-
-function setConn(text, cls) {
-  const el = $("conn");
-  el.textContent = text;
-  el.className = "conn " + cls;
-}
+function setConn(text, cls) { const el = $("conn"); el.textContent = text; el.className = "conn " + cls; }
 
 // --- rendering --------------------------------------------------------------
-function pname(id) { return id === SEAT ? "You" : "P" + id; }
+function pname(id) { return id === mySeat ? "You" : "P" + id; }
 
 function cardEl(card, small) {
   const div = document.createElement("div");
   div.className = "card " + card.color.toLowerCase() + (small ? " small" : "");
   const lbl = document.createElement("div");
   lbl.className = "lbl";
-  lbl.textContent = card.wild ? card.name : (card.name.replace(/^\w+\s/, ""));
+  lbl.textContent = card.wild ? card.name : card.name.replace(/^\w+\s/, "");
   div.appendChild(lbl);
   if (card.number !== null && card.number !== undefined) {
     const n = document.createElement("div");
@@ -112,15 +126,41 @@ function cardEl(card, small) {
   return div;
 }
 
+function renderLobby(st) {
+  const humans = new Set(st.human_seats);
+  const claimed = new Set(st.claimed_seats);
+  const total = Object.keys(st.scores).length;
+  const roles = [];
+  for (let i = 0; i < total; i++) {
+    let role;
+    if (i === mySeat) role = "you";
+    else if (!humans.has(i)) role = "AI";
+    else role = claimed.has(i) ? "human" : "waiting…";
+    roles.push(`<span class="${role === "waiting…" ? "wait" : ""}">P${i}: ${role}</span>`);
+  }
+  $("lobby").innerHTML =
+    `<span>You are <b>Player ${mySeat}</b></span>` +
+    `<span class="seats">${roles.join(" · ")}</span>` +
+    `<button id="copyBtn" class="copy">Copy invite link</button>`;
+  $("copyBtn").onclick = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(location.href);
+      $("copyBtn").textContent = "Copied!";
+      setTimeout(() => { const b = $("copyBtn"); if (b) b.textContent = "Copy invite link"; }, 1500);
+    }
+  };
+}
+
 function render() {
   if (!snap) return;
   $("intro").hidden = true;
   $("game").hidden = false;
   const st = snap.status;
 
-  // status line
-  const turn = st.to_act === null ? "—"  // null between hands / at game over
-    : (st.to_act === SEAT ? "Your turn" : pname(st.to_act) + " to act");
+  renderLobby(st);
+
+  const turn = st.to_act === null ? "—"
+    : (st.to_act === mySeat ? "Your turn" : pname(st.to_act) + " to act");
   $("status").innerHTML =
     `<span>Phase: <b>${st.phase}</b></span>` +
     `<span><b>${turn}</b></span>` +
@@ -157,18 +197,16 @@ function render() {
   now.innerHTML = `top of pile<br>active color: <b>${snap.view.top.eff_color}</b>`;
   disc.appendChild(now);
 
-  // pending banner (respond windows)
   $("pending").textContent = describePending(snap.view.pending);
 
-  // collect legal actions
-  const cardActions = {};       // hand_index -> action (play_card or reveal)
+  // legal actions -> clickable cards + buttons
+  const cardActions = {};
   const buttons = [];
   for (const a of snap.legal_actions) {
     if (a.type === "play_card" || a.type === "reveal") cardActions[a.hand_index] = a;
     else buttons.push(a);
   }
 
-  // hand
   const hand = $("hand");
   hand.innerHTML = "";
   snap.view.hand.forEach((card, i) => {
@@ -185,14 +223,10 @@ function render() {
     ? "— click a highlighted card or pick an action below"
     : (st.to_act === null ? "" : "— waiting…");
 
-  // action buttons
   const actions = $("actions");
   actions.innerHTML = "";
-  if (snap.your_turn) {
-    for (const a of buttons) actions.appendChild(actionButton(a));
-  }
+  if (snap.your_turn) for (const a of buttons) actions.appendChild(actionButton(a));
 
-  // event log
   const log = $("log");
   log.innerHTML = logLines.map((l) => `<div class="${l.big ? "big" : ""}">${l.text}</div>`).join("");
   log.scrollTop = log.scrollHeight;
@@ -205,7 +239,8 @@ function render() {
     banner.innerHTML = `<h2>Game over — ${pname(st.winner)} wins! 🏆</h2>` +
       `<div>${order.map(([k, v], idx) => `${idx + 1}. ${pname(+k)} — ${v}`).join("<br>")}</div>` +
       `<button id="againBtn">New game</button>`;
-    $("againBtn").onclick = () => newGame(snap.view.opponents.length + 1);
+    $("againBtn").onclick = () =>
+      newGame(parseInt($("numPlayers").value, 10), parseInt($("numHumans").value, 10));
   } else if (st.phase === "hand_over" && snap.hand_result) {
     banner.hidden = false;
     const hr = snap.hand_result;

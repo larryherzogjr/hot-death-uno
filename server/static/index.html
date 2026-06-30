@@ -17,6 +17,14 @@
           <option value="4" selected>4</option>
         </select>
       </label>
+      <label>Humans
+        <select id="numHumans">
+          <option value="1" selected>1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+      </label>
       <input id="passcode" class="passcode" type="password" placeholder="passcode" hidden />
       <button id="newGameBtn">New game</button>
       <span id="conn" class="conn"></span>
@@ -24,6 +32,7 @@
   </header>
 
   <main id="game" hidden>
+    <section id="lobby" class="lobby"></section>
     <section id="status" class="status"></section>
     <section id="opponents" class="opponents"></section>
 

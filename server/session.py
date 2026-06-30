@@ -52,6 +52,10 @@ class SeatError(SessionError):
     pass
 
 
+class GameFull(SessionError):
+    pass
+
+
 @dataclass
 class GameSession:
     game_id: str
@@ -60,10 +64,36 @@ class GameSession:
     ai: dict[int, RandomAI]
     seed: int  # engine seed, kept so a game can be replayed for debugging
     event_log: list[Event] = field(default_factory=list)
+    seat_tokens: dict[int, str] = field(default_factory=dict)  # claimed human seat -> token
 
     @property
     def num_players(self) -> int:
         return len(self.state.players)
+
+    # -- seats -------------------------------------------------------------- #
+
+    def claim_seat(self, token: str | None = None) -> tuple[int, str]:
+        """Claim a human seat. A matching ``token`` resumes its seat (reconnect);
+        otherwise the lowest unclaimed human seat is assigned a fresh token.
+        Raises :class:`GameFull` when every human seat is taken."""
+        if token is not None:
+            for seat, t in self.seat_tokens.items():
+                if t == token:
+                    return seat, token
+        for seat in sorted(self.human_seats):
+            if seat not in self.seat_tokens:
+                new = secrets.token_urlsafe(8)
+                self.seat_tokens[seat] = new
+                return seat, new
+        raise GameFull("all human seats are taken")
+
+    def seat_for_token(self, token: str | None) -> int:
+        """The seat a token owns, or raise. Authorizes per-seat reads/actions."""
+        if token is not None:
+            for seat, t in self.seat_tokens.items():
+                if t == token:
+                    return seat
+        raise SeatError("unknown or missing player token")
 
     @property
     def is_over(self) -> bool:
@@ -109,6 +139,7 @@ class GameSession:
             "hand_counts": {p.id: len(p.hand) for p in s.players},
             "eliminated": [p.id for p in s.players if p.eliminated],
             "human_seats": sorted(self.human_seats),
+            "claimed_seats": sorted(self.seat_tokens),
             "event_cursor": len(self.event_log),
             "card_count": card_count(s),
         }

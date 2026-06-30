@@ -9,6 +9,7 @@ import pytest
 from hdu.engine import card_count
 from hdu.state import Phase
 from server.session import (
+    GameFull,
     GameNotFound,
     IllegalAction,
     NotYourTurn,
@@ -85,6 +86,33 @@ def test_all_ai_game_does_not_pause():
     # No human seats -> hands auto-settle straight through to game over.
     g = SessionManager().create_game(num_players=4, human_seats=set(), seed=3)
     assert g.is_over and g.hand_result() is None
+
+
+def test_claim_seats_lowest_first_then_full():
+    g = SessionManager().create_game(num_players=4, human_seats={0, 1}, seed=1)
+    s0, t0 = g.claim_seat()
+    s1, t1 = g.claim_seat()
+    assert [s0, s1] == [0, 1]  # lowest unclaimed first
+    assert t0 != t1
+    with pytest.raises(GameFull):
+        g.claim_seat()
+
+
+def test_reconnect_token_returns_same_seat():
+    g = SessionManager().create_game(num_players=4, human_seats={0, 1}, seed=1)
+    s0, t0 = g.claim_seat()
+    g.claim_seat()  # someone takes seat 1
+    assert g.claim_seat(t0) == (s0, t0)  # reconnect keeps the seat
+
+
+def test_seat_for_token_authorizes():
+    g = SessionManager().create_game(num_players=4, human_seats={0}, seed=1)
+    seat, token = g.claim_seat()
+    assert g.seat_for_token(token) == seat
+    with pytest.raises(SeatError):
+        g.seat_for_token("bogus")
+    with pytest.raises(SeatError):
+        g.seat_for_token(None)
 
 
 def test_submit_rejects_wrong_seat_and_illegal_action():
