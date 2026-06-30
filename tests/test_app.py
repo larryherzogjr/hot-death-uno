@@ -184,6 +184,14 @@ def test_no_passcode_required_when_unset(client):
     assert client.post("/api/games", json={"seed": 1}).status_code == 200
 
 
+def test_modal_hidden_override_present(client):
+    # Regression: `.modal { display: flex }` defeats the HTML `hidden` attribute
+    # (author CSS beats the UA [hidden] rule), which left the rules modal stuck
+    # open, empty, and unclosable. `.modal[hidden] { display: none }` re-hides it.
+    css = client.get("/style.css").text
+    assert ".modal[hidden]" in css and "display: none" in css
+
+
 def test_spa_index_is_no_cache_with_versioned_assets(client):
     # The SPA index must revalidate (no-cache) and reference versioned asset URLs
     # so a deploy busts even an aggressive browser/proxy cache.
