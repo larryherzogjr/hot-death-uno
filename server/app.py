@@ -65,19 +65,42 @@ manager = SessionManager()
 
 
 # --------------------------------------------------------------------------- #
-# Passcode gate (optional). Set HDU_PASSCODE to require a shared code to *create*
-# games; existing games are reached via their unguessable id, so only creation
-# is gated. Unset/empty => no gate (open, e.g. for local dev and tests).
+# Access gate (optional). Valid codes come from HDU_PASSCODE (a single shared
+# code) and/or HDU_TOKENS_FILE (a file with one code per line — `code` or
+# `code: label`, `#` comments allowed). The file is read live on each check, so
+# codes can be handed out or revoked by editing it — no restart, and removing
+# one code doesn't affect the others. Only game *creation* is gated; existing
+# games are reached via their unguessable id. No codes => open server.
 # --------------------------------------------------------------------------- #
 
+def _valid_codes() -> set[str]:
+    codes: set[str] = set()
+    shared = os.environ.get("HDU_PASSCODE", "").strip()
+    if shared:
+        codes.add(shared)
+    path = os.environ.get("HDU_TOKENS_FILE", "").strip()
+    if path:
+        try:
+            for line in Path(path).read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                code = line.split(":", 1)[0].strip()  # allow "code: label"
+                if code:
+                    codes.add(code)
+        except OSError:
+            pass  # missing/unreadable file -> just those codes absent
+    return codes
+
+
 def _passcode_ok(provided: str | None) -> bool:
-    required = os.environ.get("HDU_PASSCODE", "")
-    return (not required) or provided == required
+    codes = _valid_codes()
+    return (not codes) or (provided in codes)
 
 
 @app.get("/api/config")
 async def get_config() -> dict[str, Any]:
-    return {"passcode_required": bool(os.environ.get("HDU_PASSCODE", ""))}
+    return {"passcode_required": bool(_valid_codes())}
 
 
 @app.get("/api/cards")
@@ -120,9 +143,10 @@ def snapshot(session: GameSession, seat: int) -> dict[str, Any]:
 
 
 # Pace AI turns: one move per broadcast, a beat apart, so players watch each AI
-# play its card. Tests set this to 0. A per-game lock keeps two drivers from
-# interleaving (only ever one runs, since a human can't act mid-cascade).
-_AI_DELAY = 0.8
+# play its card. Tunable via HDU_AI_DELAY (seconds); tests set it to 0. A per-game
+# lock keeps two drivers from interleaving (only one runs — a human can't act
+# mid-cascade).
+_AI_DELAY = float(os.environ.get("HDU_AI_DELAY", "1.2"))
 _drive_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -152,6 +176,7 @@ class CreateGameRequest(BaseModel):
     num_humans: int = Field(default=1, ge=1, le=10)
     hand_size: int = Field(default=7, ge=2, le=15)
     seed: int | None = None
+    name: str | None = None
 
 
 @app.post("/api/games")
@@ -170,7 +195,7 @@ async def create_game(
         human_seats=set(range(req.num_humans)),
         seed=req.seed,
     )
-    seat, token = session.claim_seat()  # the creator is seated first (seat 0)
+    seat, token = session.claim_seat(name=req.name)  # the creator is seated first (seat 0)
     return {
         "game_id": session.game_id,
         "seat": seat,
@@ -181,12 +206,13 @@ async def create_game(
 
 class JoinRequest(BaseModel):
     player_token: str | None = None  # present on reconnect
+    name: str | None = None
 
 
 @app.post("/api/games/{game_id}/join")
 async def join_game(game_id: str, req: JoinRequest) -> dict[str, Any]:
     session = manager.get(game_id)
-    seat, token = session.claim_seat(req.player_token)
+    seat, token = session.claim_seat(req.player_token, name=req.name)
     await hub.broadcast(game_id, session, [])  # let seated players see the lobby fill
     return {"seat": seat, "player_token": token, "status": session.public_status()}
 
@@ -272,6 +298,17 @@ class Hub:
         for seat, ws in dead:
             self.remove(game_id, seat, ws)
 
+    async def send_all(self, game_id: str, payload: dict) -> None:
+        """Send one identical payload to every connection (e.g. chat — no redaction)."""
+        dead: list[tuple[int, WebSocket]] = []
+        for seat, ws in list(self._conns.get(game_id, set())):
+            try:
+                await ws.send_json(payload)
+            except Exception:  # noqa: BLE001
+                dead.append((seat, ws))
+        for seat, ws in dead:
+            self.remove(game_id, seat, ws)
+
 
 hub = Hub()
 
@@ -292,6 +329,8 @@ async def game_ws(websocket: WebSocket, game_id: str, token: str = Query(...)) -
     hub.add(game_id, seat, websocket)
     try:
         await websocket.send_json({"type": "snapshot", "snapshot": snapshot(session, seat)})
+        if session.chat_log:
+            await websocket.send_json({"type": "chat_history", "messages": session.chat_log})
         while True:
             msg = await websocket.receive_json()
             kind = msg.get("type")
@@ -306,6 +345,12 @@ async def game_ws(websocket: WebSocket, game_id: str, token: str = Query(...)) -
                     continue
                 await hub.broadcast(game_id, session, events)  # human's move
                 await _drive_ai(game_id)  # paced AI cascade
+            elif kind == "chat":
+                try:
+                    chat = session.add_chat(seat, msg.get("text", ""))
+                except SessionError:
+                    continue
+                await hub.send_all(game_id, {"type": "chat", "message": chat})
             # other message types (e.g. "ping") are ignored for now
     except WebSocketDisconnect:
         pass

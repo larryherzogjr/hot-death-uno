@@ -10,6 +10,11 @@ services:
     ports:
       - "127.0.0.1:8126:8000"
     environment:
-      # Shared passcode required to create games. Set it in a `.env` file next to
-      # this compose file (docker compose loads it automatically). Empty = open.
-      - HDU_PASSCODE=${HDU_PASSCODE:-}
+      # Set these in a `.env` file next to this compose file (auto-loaded).
+      - HDU_PASSCODE=${HDU_PASSCODE:-}   # single shared code; empty = open
+      - HDU_AI_DELAY=${HDU_AI_DELAY:-1.2}  # seconds between AI moves
+      # Multiple access codes, hand-out/revoke live by editing the file. To use:
+      # create ./tokens.txt, then uncomment the volume below and set this.
+      # - HDU_TOKENS_FILE=/data/tokens.txt
+    # volumes:
+    #   - ./tokens.txt:/data/tokens.txt:ro   # bind-mount so edits apply live

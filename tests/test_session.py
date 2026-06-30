@@ -129,6 +129,30 @@ def test_seat_for_token_authorizes():
         g.seat_for_token(None)
 
 
+def test_names_and_chat():
+    from server.session import IllegalAction
+
+    g = SessionManager().create_game(num_players=4, human_seats={0, 1}, seed=1)
+    g.claim_seat(name="Alice")
+    g.claim_seat(name="  Bob  ")
+    assert g.public_status()["names"] == {0: "Alice", 1: "Bob"}  # trimmed
+
+    msg = g.add_chat(0, "  hi there  ")
+    assert msg == {"seat": 0, "name": "Alice", "text": "hi there"}
+    assert g.chat_log[-1] == msg
+    with pytest.raises(IllegalAction):
+        g.add_chat(0, "   ")           # empty rejected
+    with pytest.raises(SeatError):
+        g.add_chat(2, "I'm an AI")     # only seated players can chat
+
+
+def test_reconnect_updates_name():
+    g = SessionManager().create_game(num_players=2, human_seats={0, 1}, seed=1)
+    seat, token = g.claim_seat(name="Al")
+    g.claim_seat(token, name="Alice")  # same token, new name
+    assert g.public_status()["names"][seat] == "Alice"
+
+
 def test_submit_rejects_wrong_seat_and_illegal_action():
     mgr = SessionManager()
     g = mgr.create_game(num_players=4, human_seats={0}, seed=5)

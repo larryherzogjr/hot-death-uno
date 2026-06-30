@@ -1,0 +1,5 @@
+# One access code per line. Lines may be `code` or `code: a label/note`.
+# `#` comments and blank lines are ignored. Edit while running to add/revoke
+# codes live (with the bind-mount in docker-compose.yml) — no restart needed.
+alice-7f3a
+bob-9k2x: Bob (remove this line to revoke just Bob)

@@ -56,6 +56,12 @@ class GameFull(SessionError):
     pass
 
 
+def _clean_name(name: str | None) -> str | None:
+    if not name:
+        return None
+    return name.strip()[:24] or None
+
+
 @dataclass
 class GameSession:
     game_id: str
@@ -65,6 +71,8 @@ class GameSession:
     seed: int  # engine seed, kept so a game can be replayed for debugging
     event_log: list[Event] = field(default_factory=list)
     seat_tokens: dict[int, str] = field(default_factory=dict)  # claimed human seat -> token
+    seat_names: dict[int, str] = field(default_factory=dict)   # claimed human seat -> display name
+    chat_log: list[dict] = field(default_factory=list)         # recent chat (capped)
 
     @property
     def num_players(self) -> int:
@@ -72,20 +80,38 @@ class GameSession:
 
     # -- seats -------------------------------------------------------------- #
 
-    def claim_seat(self, token: str | None = None) -> tuple[int, str]:
+    def claim_seat(self, token: str | None = None, name: str | None = None) -> tuple[int, str]:
         """Claim a human seat. A matching ``token`` resumes its seat (reconnect);
         otherwise the lowest unclaimed human seat is assigned a fresh token.
         Raises :class:`GameFull` when every human seat is taken."""
+        name = _clean_name(name)
         if token is not None:
             for seat, t in self.seat_tokens.items():
                 if t == token:
+                    if name:
+                        self.seat_names[seat] = name
                     return seat, token
         for seat in sorted(self.human_seats):
             if seat not in self.seat_tokens:
                 new = secrets.token_urlsafe(8)
                 self.seat_tokens[seat] = new
+                self.seat_names[seat] = name or f"Player {seat}"
                 return seat, new
         raise GameFull("all human seats are taken")
+
+    def add_chat(self, seat: int, text: str) -> dict:
+        """Record a chat message from a seated player and return it for broadcast."""
+        self._check_seat(seat)
+        if seat not in self.seat_tokens:
+            raise SeatError("only seated players can chat")
+        text = (text or "").strip()[:500]
+        if not text:
+            raise IllegalAction("empty message")
+        msg = {"seat": seat, "name": self.seat_names.get(seat, f"Player {seat}"), "text": text}
+        self.chat_log.append(msg)
+        if len(self.chat_log) > 50:
+            del self.chat_log[:-50]
+        return msg
 
     def seat_for_token(self, token: str | None) -> int:
         """The seat a token owns, or raise. Authorizes per-seat reads/actions."""
@@ -140,6 +166,7 @@ class GameSession:
             "eliminated": [p.id for p in s.players if p.eliminated],
             "human_seats": sorted(self.human_seats),
             "claimed_seats": sorted(self.seat_tokens),
+            "names": dict(self.seat_names),
             "event_cursor": len(self.event_log),
             "card_count": card_count(s),
         }

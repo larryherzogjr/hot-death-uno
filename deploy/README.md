@@ -95,8 +95,15 @@ git pull && docker compose up -d --build
   `SessionManager` is kept behind one interface to make that swap clean).
 - The published Docker port is bound to `127.0.0.1`, so the app is reachable
   **only** via nginx, never directly from the internet.
-- **Gating testers:** set a shared passcode so only people with the code can
-  create games. Copy `.env.example` to `.env` next to `docker-compose.yml` and
-  set `HDU_PASSCODE=yourcode`, then `docker compose up -d`. The SPA prompts for
-  it; empty/unset leaves the server open. (Existing games are reached via their
-  unguessable id, so only *creation* is gated.)
+- **Gating testers:** only *game creation* is gated (existing games are reached
+  via their unguessable id). Two options, which can be combined:
+  - **One shared code** — `cp .env.example .env`, set `HDU_PASSCODE=yourcode`,
+    `docker compose up -d`.
+  - **Many codes, hand-out/revoke live** — `cp tokens.txt.example tokens.txt`
+    (one code per line; `code` or `code: label`), uncomment the `HDU_TOKENS_FILE`
+    env and the `tokens.txt` volume in `docker-compose.yml`, `docker compose up -d`.
+    The file is bind-mounted and read on every check, so adding or removing a
+    line takes effect **immediately, no restart**, and revoking one code doesn't
+    affect the others. `tokens.txt` is gitignored.
+
+  The SPA prompts for a code whenever the gate is active; empty leaves it open.

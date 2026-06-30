@@ -25,6 +25,7 @@
           <option value="4">4</option>
         </select>
       </label>
+      <input id="nameInput" class="nameinput" type="text" placeholder="your name" maxlength="24" />
       <input id="passcode" class="passcode" type="password" placeholder="passcode" hidden />
       <button id="newGameBtn">New game</button>
       <button id="rulesBtn" class="ghost">Rules</button>
@@ -49,6 +50,15 @@
       <div class="me-head">Your hand <span id="turnHint" class="turn-hint"></span></div>
       <div id="hand" class="hand"></div>
       <div id="actions" class="actions"></div>
+    </section>
+
+    <section id="chat" class="chat">
+      <h2>Chat</h2>
+      <div id="chatLog" class="chat-log"></div>
+      <form id="chatForm" class="chat-form" autocomplete="off">
+        <input id="chatInput" type="text" placeholder="Say something…" maxlength="500" />
+        <button type="submit">Send</button>
+      </form>
     </section>
 
     <section class="log-wrap">

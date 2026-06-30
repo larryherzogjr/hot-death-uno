@@ -11,6 +11,7 @@ from server.app import app, manager
 @pytest.fixture(autouse=True)
 def _clean_manager(monkeypatch):
     monkeypatch.delenv("HDU_PASSCODE", raising=False)  # gate off unless a test sets it
+    monkeypatch.delenv("HDU_TOKENS_FILE", raising=False)
     monkeypatch.setattr("server.app._AI_DELAY", 0)  # no pacing delay in tests
     manager._games.clear()
     yield
@@ -185,6 +186,36 @@ def test_no_passcode_required_when_unset(client):
     assert client.post("/api/games", json={"seed": 1}).status_code == 200
 
 
+def _create(client, code):
+    return client.post("/api/games", json={"seed": 1}, headers={"X-HDU-Passcode": code})
+
+
+def test_token_file_codes_work_and_revoke_live(client, monkeypatch, tmp_path):
+    f = tmp_path / "tokens.txt"
+    f.write_text("alpha\nbravo: Bob's code\n# a comment line\n")
+    monkeypatch.setenv("HDU_TOKENS_FILE", str(f))
+
+    assert client.get("/api/config").json()["passcode_required"] is True
+    assert _create(client, "alpha").status_code == 200
+    assert _create(client, "bravo").status_code == 200  # label after ':' ignored
+    assert _create(client, "nope").status_code == 401
+
+    # Revoke just 'alpha' by editing the file — takes effect immediately.
+    f.write_text("bravo: Bob's code\n")
+    assert _create(client, "alpha").status_code == 401
+    assert _create(client, "bravo").status_code == 200  # others unaffected
+
+
+def test_shared_passcode_and_token_file_combine(client, monkeypatch, tmp_path):
+    f = tmp_path / "tokens.txt"
+    f.write_text("filecode\n")
+    monkeypatch.setenv("HDU_PASSCODE", "sharedcode")
+    monkeypatch.setenv("HDU_TOKENS_FILE", str(f))
+    assert _create(client, "sharedcode").status_code == 200
+    assert _create(client, "filecode").status_code == 200
+    assert _create(client, "other").status_code == 401
+
+
 def test_modal_hidden_override_present(client):
     # Regression: `.modal { display: flex }` defeats the HTML `hidden` attribute
     # (author CSS beats the UA [hidden] rule), which left the rules modal stuck
@@ -216,6 +247,20 @@ def test_websocket_pushes_snapshot_and_updates(client):
         update = ws.receive_json()
         assert update["type"] == "update"
         assert "events" in update and "snapshot" in update
+
+
+def test_name_recorded_and_chat_broadcasts(client):
+    g = _new_game(client, name="Alice")
+    gid, tok = g["game_id"], g["player_token"]
+    # The name is in the public status.
+    assert _state(client, gid, tok)["status"]["names"]["0"] == "Alice"
+    # Chat over the WS echoes back to the sender (and everyone).
+    with client.websocket_connect(f"/api/games/{gid}/ws?token={tok}") as ws:
+        ws.receive_json()  # snapshot
+        ws.send_json({"type": "chat", "text": "hello table"})
+        m = ws.receive_json()
+        assert m["type"] == "chat"
+        assert m["message"] == {"seat": 0, "name": "Alice", "text": "hello table"}
 
 
 def test_websocket_rejects_bad_token(client):

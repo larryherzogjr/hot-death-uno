@@ -11,6 +11,7 @@ let catalog = {};        // card id -> info, for tooltips
 let catalogList = [];    // ordered, for the rules modal
 let rulesSections = [];
 let prevTopKey = null;   // discard top, to animate when it changes
+let chatMsgs = [];       // chat history
 
 const $ = (id) => document.getElementById(id);
 
@@ -18,6 +19,14 @@ const $ = (id) => document.getElementById(id);
 $("newGameBtn").onclick = () =>
   newGame(parseInt($("numPlayers").value, 10), parseInt($("numHumans").value, 10));
 $("rulesBtn").onclick = openRules;
+$("nameInput").value = localStorage.getItem("hdu_name") || "";
+$("nameInput").onchange = () => localStorage.setItem("hdu_name", $("nameInput").value.trim());
+$("chatForm").onsubmit = (e) => {
+  e.preventDefault();
+  const text = $("chatInput").value.trim();
+  if (text && ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "chat", text }));
+  $("chatInput").value = "";
+};
 $("rulesClose").onclick = closeRules;
 $("rulesModal").onclick = (e) => { if (e.target.id === "rulesModal") closeRules(); };
 document.addEventListener("click", (e) => { if (!e.target.closest(".badge")) hideTip(true); });
@@ -58,7 +67,7 @@ async function newGame(numPlayers, numHumans) {
   }
   const r = await fetch("/api/games", {
     method: "POST", headers,
-    body: JSON.stringify({ num_players: numPlayers, num_humans: numHumans }),
+    body: JSON.stringify({ num_players: numPlayers, num_humans: numHumans, name: myName() }),
   });
   if (r.status === 401) { localStorage.removeItem("hdu_passcode"); setConn("wrong passcode", "bad"); return; }
   if (!r.ok) { setConn("create failed", "bad"); return; }
@@ -73,7 +82,7 @@ async function joinAndConnect() {
   try {
     r = await fetch(`/api/games/${gameId}/join`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(stored ? { player_token: stored } : {}),
+      body: JSON.stringify({ player_token: stored || undefined, name: myName() }),
     });
   } catch (e) { setConn("join failed", "bad"); return; }
   if (r.status === 404) { setConn("game not found", "bad"); showIntro("That game no longer exists."); return; }
@@ -102,6 +111,8 @@ function showIntro(text) {
 // --- websocket --------------------------------------------------------------
 function connect() {
   if (ws) { try { ws.close(); } catch (e) {} }
+  chatMsgs = [];
+  renderChat();
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/api/games/${gameId}/ws?token=${encodeURIComponent(playerToken)}`);
   setConn("connecting…", "");
@@ -115,8 +126,21 @@ function connect() {
     else if (msg.type === "update") {
       (msg.events || []).forEach(pushEvent);
       snap = msg.snapshot; mySeat = snap.view.me; render();
-    } else if (msg.type === "error") { pushLog("⚠ " + msg.detail, true); render(); }
+    } else if (msg.type === "chat") { chatMsgs.push(msg.message); renderChat(); }
+    else if (msg.type === "chat_history") { chatMsgs = msg.messages || []; renderChat(); }
+    else if (msg.type === "error") { pushLog("⚠ " + msg.detail, true); render(); }
   };
+}
+
+function myName() { return $("nameInput").value.trim(); }
+function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+
+function renderChat() {
+  const el = $("chatLog");
+  el.innerHTML = chatMsgs
+    .map((m) => `<div class="msg${m.seat === mySeat ? " me" : ""}"><b>${esc(m.name)}:</b> ${esc(m.text)}</div>`)
+    .join("");
+  el.scrollTop = el.scrollHeight;
 }
 
 function submit(action) {
@@ -137,7 +161,11 @@ function flashToast(text) {
 }
 
 // --- rendering --------------------------------------------------------------
-function pname(id) { return id === mySeat ? "You" : "P" + id; }
+function pname(id) {
+  if (id === mySeat) return "You";
+  const names = snap && snap.status && snap.status.names;
+  return names && names[id] ? esc(names[id]) : "P" + id;
+}
 
 function cardEl(card, small) {
   const div = document.createElement("div");
