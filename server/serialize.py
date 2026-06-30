@@ -23,6 +23,7 @@ from hdu.actions import (
 )
 from hdu.cards import Card, CardId, Color, display_name
 from hdu.events import CardPlayed, ColorChosen, Event, GameOver, HandScored
+from hdu.scoring import card_held_value
 from hdu.state import DiscardEntry, Pending
 from hdu.view import OpponentView, PlayerView
 
@@ -30,14 +31,17 @@ from hdu.view import OpponentView, PlayerView
 # Primitives
 # --------------------------------------------------------------------------- #
 
-def encode_card(card: Card) -> dict[str, Any]:
-    return {
+def encode_card(card: Card, points: int | None = None) -> dict[str, Any]:
+    d: dict[str, Any] = {
         "id": card.id.name,
         "color": card.color.name,
         "number": card.number,
         "name": display_name(card),
         "wild": card.is_wild,
     }
+    if points is not None:  # live held value, for the player's own hand
+        d["points"] = points
+    return d
 
 
 def encode_discard(entry: DiscardEntry) -> dict[str, Any]:
@@ -77,9 +81,10 @@ def encode_pending(p: Pending | None) -> dict[str, Any] | None:
 
 
 def encode_view(v: PlayerView) -> dict[str, Any]:
+    n_opp = len(v.opponents)
     return {
         "me": v.me,
-        "hand": [encode_card(c) for c in v.hand],
+        "hand": [encode_card(c, card_held_value(c, v.hand, n_opp)) for c in v.hand],
         "opponents": [encode_opponent(o) for o in v.opponents],
         "top": encode_discard(v.top),
         "to_act": v.to_act,

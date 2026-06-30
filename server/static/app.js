@@ -7,14 +7,22 @@ let playerToken = null;
 let ws = null;
 let snap = null;
 let logLines = [];
+let catalog = {};        // card id -> info, for tooltips
+let catalogList = [];    // ordered, for the rules modal
+let rulesSections = [];
 
 const $ = (id) => document.getElementById(id);
 
 // --- bootstrap --------------------------------------------------------------
 $("newGameBtn").onclick = () =>
   newGame(parseInt($("numPlayers").value, 10), parseInt($("numHumans").value, 10));
+$("rulesBtn").onclick = openRules;
+$("rulesClose").onclick = () => { $("rulesModal").hidden = true; };
+$("rulesModal").onclick = (e) => { if (e.target.id === "rulesModal") $("rulesModal").hidden = true; };
+document.addEventListener("click", (e) => { if (!e.target.closest(".badge")) hideTip(true); });
 
 window.addEventListener("load", async () => {
+  loadCatalog();
   try {
     const cfg = await (await fetch("/api/config")).json();
     if (cfg.passcode_required) {
@@ -27,6 +35,16 @@ window.addEventListener("load", async () => {
   const m = location.hash.match(/game=([\w-]+)/);
   if (m) { gameId = m[1]; joinAndConnect(); }
 });
+
+async function loadCatalog() {
+  try {
+    const data = await (await fetch("/api/cards")).json();
+    catalogList = data.cards;
+    rulesSections = data.sections;
+    catalog = {};
+    for (const c of data.cards) catalog[c.id] = c;
+  } catch (e) { /* catalog is best-effort */ }
+}
 
 async function newGame(numPlayers, numHumans) {
   numHumans = Math.min(numHumans, numPlayers);
@@ -123,7 +141,67 @@ function cardEl(card, small) {
     n.textContent = card.number;
     div.appendChild(n);
   }
+  attachTip(div, card, small);
   return div;
+}
+
+// --- card tooltips ----------------------------------------------------------
+let tipPinned = false;
+
+function attachTip(el, card, small) {
+  el.addEventListener("mouseenter", () => { if (!tipPinned) showTip(card, el, false); });
+  el.addEventListener("mouseleave", () => hideTip(false));
+  if (!small) {
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = "?";
+    badge.addEventListener("click", (e) => { e.stopPropagation(); showTip(card, el, true); });
+    el.appendChild(badge);
+  }
+}
+
+function showTip(card, anchor, pin) {
+  const info = catalog[card.id];
+  const tip = $("tip");
+  let h = `<b>${card.name}</b>`;
+  if (card.points !== undefined && card.points !== null) h += ` <span class="tip-worth">· worth ${card.points} now</span>`;
+  if (info) {
+    h += `<div class="tip-eff">${info.effect}</div>`;
+    if (info.defense) h += `<div class="tip-def">${info.defense}</div>`;
+  }
+  tip.innerHTML = h;
+  tip.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  tip.style.left = Math.max(8, Math.min(r.left, window.innerWidth - tip.offsetWidth - 8)) + "px";
+  tip.style.top = Math.max(8, r.top - tip.offsetHeight - 8) + "px";
+  tipPinned = !!pin;
+}
+
+function hideTip(force) {
+  if (tipPinned && !force) return;
+  tipPinned = false;
+  $("tip").hidden = true;
+}
+
+// --- rules modal ------------------------------------------------------------
+function openRules() {
+  const groups = {}, order = [];
+  for (const c of catalogList) {
+    if (!groups[c.category]) { groups[c.category] = []; order.push(c.category); }
+    groups[c.category].push(c);
+  }
+  let html = "<h2>How to play</h2>";
+  for (const s of rulesSections) html += `<p><b>${s.title}.</b> ${s.body}</p>`;
+  html += "<h2>Cards</h2>";
+  for (const cat of order) {
+    html += `<h3>${cat}</h3>`;
+    for (const c of groups[cat]) {
+      html += `<div class="rule-card"><b>${c.name}</b> <span class="rv">${c.value}</span><br>${c.effect}` +
+        (c.defense ? `<br><i>${c.defense}</i>` : "") + `</div>`;
+    }
+  }
+  $("rulesBody").innerHTML = html;
+  $("rulesModal").hidden = false;
 }
 
 function renderLobby(st) {

@@ -33,6 +33,7 @@ header h1 { font-size: 1.15rem; margin: 0; letter-spacing: 0.5px; }
   border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
 }
 .newgame button { cursor: pointer; background: var(--accent); color: #08121f; border: none; font-weight: 600; }
+.newgame button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
 .passcode { width: 110px; }
 .conn { font-size: 0.8rem; color: var(--muted); }
 .conn.ok { color: var(--green); }
@@ -79,11 +80,19 @@ main { max-width: 920px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
 }
 
 .card {
+  position: relative;
   width: 74px; height: 104px; border-radius: 9px; padding: 6px;
   display: flex; flex-direction: column; justify-content: space-between;
   color: #fff; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,.4);
   border: 2px solid rgba(255,255,255,.18); user-select: none;
 }
+.card .badge {
+  position: absolute; top: 2px; right: 3px; width: 15px; height: 15px;
+  border-radius: 50%; background: rgba(0,0,0,.35); color: #fff;
+  font-size: 0.65rem; font-weight: 700; line-height: 15px; text-align: center;
+  text-shadow: none; cursor: pointer;
+}
+.card.small .badge { display: none; }
 .card .lbl { font-size: 0.82rem; line-height: 1.05; }
 .card .num { font-size: 1.6rem; align-self: flex-end; }
 .card.red { background: var(--red); }
@@ -135,3 +144,40 @@ main { max-width: 920px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
   margin-top: 0.6rem; font: inherit; font-weight: 600; cursor: pointer;
   padding: 0.5rem 1rem; border-radius: 7px; border: none; background: var(--accent); color: #08121f;
 }
+
+/* card tooltip */
+.tip {
+  position: fixed; z-index: 50; max-width: 260px; padding: 0.5rem 0.7rem;
+  background: #0c0f15; border: 1px solid var(--accent); border-radius: 8px;
+  color: var(--text); font-size: 0.8rem; font-weight: 400; box-shadow: 0 6px 20px rgba(0,0,0,.5);
+  pointer-events: none;
+}
+.tip b { color: var(--accent); }
+.tip .tip-worth { color: var(--muted); }
+.tip .tip-eff { margin-top: 4px; }
+.tip .tip-def { margin-top: 4px; color: var(--muted); font-style: italic; }
+
+/* rules modal */
+.modal {
+  position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-start;
+  justify-content: center; padding: 4vh 1rem; background: rgba(0,0,0,.6); overflow-y: auto;
+}
+.modal-box {
+  position: relative; max-width: 640px; width: 100%; padding: 1.5rem 1.75rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+.modal-close {
+  position: absolute; top: 0.6rem; right: 0.8rem; background: none; border: none;
+  color: var(--muted); font-size: 1.4rem; line-height: 1; cursor: pointer;
+}
+#rulesBody h2 { margin: 1.2rem 0 0.5rem; font-size: 1.05rem; }
+#rulesBody h2:first-child { margin-top: 0; }
+#rulesBody h3 { margin: 1rem 0 0.4rem; font-size: 0.9rem; color: var(--accent); }
+#rulesBody p { margin: 0.4rem 0; color: var(--muted); font-size: 0.9rem; }
+#rulesBody p b { color: var(--text); }
+.rule-card {
+  padding: 0.45rem 0.6rem; margin: 0.35rem 0; background: var(--panel-2);
+  border-radius: 7px; font-size: 0.85rem;
+}
+.rule-card .rv { float: right; color: var(--muted); font-size: 0.78rem; }
+.rule-card i { color: var(--muted); }

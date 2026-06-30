@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .catalog import catalog_payload
 from .serialize import decode_action, encode_actions, encode_events, encode_view
 from .session import (
     GameFull,
@@ -65,6 +66,12 @@ def _passcode_ok(provided: str | None) -> bool:
 @app.get("/api/config")
 async def get_config() -> dict[str, Any]:
     return {"passcode_required": bool(os.environ.get("HDU_PASSCODE", ""))}
+
+
+@app.get("/api/cards")
+async def get_cards() -> dict[str, Any]:
+    """Static card catalog + rules primer for the rules page and tooltips."""
+    return catalog_payload()
 
 
 # --------------------------------------------------------------------------- #
