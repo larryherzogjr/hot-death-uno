@@ -230,6 +230,14 @@ def test_modal_hidden_override_present(client):
     assert ".modal[hidden]" in css and "display: none" in css
 
 
+def test_me_overlay_hidden_override_present(client):
+    # Same trap as the modal: `.me-overlay { display: flex }` overrode the `hidden`
+    # attribute, so the "Eliminated" overlay showed over EVERY player's hand at all
+    # times (not just eliminated ones). `.me-overlay[hidden] { display: none }` fixes it.
+    css = client.get("/style.css").text
+    assert ".me-overlay[hidden]" in css
+
+
 def test_spa_index_is_no_cache_with_versioned_assets(client):
     # The SPA index must revalidate (no-cache) and reference versioned asset URLs
     # so a deploy busts even an aggressive browser/proxy cache.
