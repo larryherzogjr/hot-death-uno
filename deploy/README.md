@@ -89,6 +89,40 @@ git pull && docker compose up -d --build
 - Change the host port: edit the `ports:` line in `docker-compose.yml` (and the
   `proxy_pass` in the nginx conf to match).
 
+## Uptime & health
+
+Three layers keep it running unattended:
+
+1. **Starts on boot.** `restart: unless-stopped` brings the container (and the
+   autoheal sidecar) back after a crash *or* a reboot — **as long as the Docker
+   daemon itself starts on boot.** Make sure it does:
+   ```bash
+   systemctl is-enabled docker    # want: enabled
+   sudo systemctl enable --now docker   # if it wasn't
+   ```
+   (Note: `unless-stopped` won't restart the container if you `docker compose stop`
+   it by hand — that's intentional.)
+
+2. **Health check.** The image runs a `HEALTHCHECK` against `/healthz` every 30s,
+   so `docker ps` shows `healthy` / `unhealthy`:
+   ```bash
+   docker inspect -f '{{.State.Health.Status}}' hdu
+   curl -s localhost:8126/healthz     # -> {"status":"ok"}
+   ```
+
+3. **Auto-recovery.** The `autoheal` sidecar (in the same compose file) restarts
+   the app **if the health check goes red** — the case Docker's own restart policy
+   misses (process alive but hung). It only touches containers labelled
+   `autoheal=true`, so it never interferes with other apps on this host. It mounts
+   the Docker socket read-only to do this.
+   ```bash
+   docker logs hdu-autoheal      # shows any restarts it performs
+   ```
+
+For an **external** monitor (uptime-kuma, healthchecks.io, etc.), point it at
+`https://hdu.ospdy.com/healthz` — it returns `200 {"status":"ok"}` and does no
+per-session work.
+
 ## Notes / v1 limits
 - **In-memory sessions, single worker.** Restarting the container drops live
   games. Scaling to multiple workers would need a shared session store (the

@@ -187,6 +187,12 @@ def test_passcode_gate(client, monkeypatch):
     ).status_code == 200
 
 
+def test_healthz(client):
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
 def test_no_passcode_required_when_unset(client):
     assert client.get("/api/config").json()["passcode_required"] is False
     assert client.post("/api/games", json={"seed": 1}).status_code == 200

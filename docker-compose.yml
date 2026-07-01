@@ -7,6 +7,11 @@ services:
     image: hdu:latest
     container_name: hdu
     restart: unless-stopped
+    # Watched by the autoheal sidecar below: if the container's HEALTHCHECK goes
+    # unhealthy (app hung but process alive), it gets restarted. Docker's own
+    # restart policy only fires on crash/exit, not on "unhealthy".
+    labels:
+      - autoheal=true
     ports:
       - "127.0.0.1:8126:8000"
     environment:
@@ -25,3 +30,17 @@ services:
       # - HDU_TOKENS_FILE=/data/tokens.txt
     # volumes:
     #   - ./tokens.txt:/data/tokens.txt:ro   # bind-mount so edits apply live
+
+  # Restarts any container labelled `autoheal=true` when its HEALTHCHECK reports
+  # unhealthy. Scoped by label (not "all"), so it never touches other apps on the
+  # host. Needs the Docker socket (read-only) to watch/restart containers.
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    container_name: hdu-autoheal
+    restart: unless-stopped
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal   # only manage labelled containers
+      - AUTOHEAL_INTERVAL=10                 # seconds between health scans
+      - AUTOHEAL_START_PERIOD=30             # grace period after a container starts
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro

@@ -109,6 +109,13 @@ def _passcode_ok(provided: str | None) -> bool:
     return (not codes) or (provided in codes)
 
 
+@app.get("/healthz")
+async def healthz() -> dict[str, str]:
+    """Liveness probe — cheap, unauthenticated, no session work. Used by the
+    Docker HEALTHCHECK / autoheal and any external uptime monitor."""
+    return {"status": "ok"}
+
+
 @app.get("/api/config")
 async def get_config() -> dict[str, Any]:
     return {"passcode_required": bool(_valid_codes())}
