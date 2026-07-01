@@ -200,7 +200,7 @@ def snapshot(session: GameSession, seat: int) -> dict[str, Any]:
         "status": session.public_status(),
         "view": encode_view(session.view_for_seat(seat)),
         "legal_actions": encode_actions(session.legal_for_seat(seat)),
-        "your_turn": (not session.is_over) and session.state.to_act == seat,
+        "your_turn": session.started and (not session.is_over) and session.state.to_act == seat,
         "hand_result": session.hand_result(),  # set only at an end-of-hand pause
     }
 
@@ -263,12 +263,15 @@ async def create_game(
         raise HTTPException(status_code=401, detail="bad or missing passcode")
     if req.num_humans > req.num_players:
         raise HTTPException(status_code=422, detail="num_humans exceeds num_players")
-    # Humans take the low seats (0..num_humans-1); the rest are AI.
+    # Humans take the low seats (0..num_humans-1); the rest are AI. Multi-human
+    # games wait in a lobby until the host starts; single-player begins at once.
+    multi_human = req.num_humans > 1
     session = manager.create_game(
         num_players=req.num_players,
         hand_size=req.hand_size,
         human_seats=set(range(req.num_humans)),
         seed=req.seed,
+        start=not multi_human,
     )
     name = auth.session_name(user) or req.name  # verified name wins
     seat, token = session.claim_seat(name=name)  # the creator is seated first (seat 0)
@@ -295,6 +298,22 @@ async def join_game(request: Request, game_id: str, req: JoinRequest) -> dict[st
     seat, token = session.claim_seat(req.player_token, name=name)
     await hub.broadcast(game_id, session, [])  # let seated players see the lobby fill
     return {"seat": seat, "player_token": token, "status": session.public_status()}
+
+
+@app.post("/api/games/{game_id}/start")
+async def start_game(
+    game_id: str, x_hdu_player: str | None = Header(default=None)
+) -> dict[str, Any]:
+    """Host-only: begin a lobbied multi-human game. Unfilled human seats become
+    bots so a no-show can't wedge the game."""
+    session = manager.get(game_id)
+    seat = _seat_of(session, x_hdu_player)
+    if seat != session.host_seat:
+        raise HTTPException(status_code=403, detail="only the host can start the game")
+    session.start(convert_unclaimed=True)
+    await hub.broadcast(game_id, session, [])  # flip every client from lobby to table
+    await _drive_ai(game_id)                    # paced opening AI cascade
+    return {"ok": True, "status": session.public_status()}
 
 
 @app.get("/api/games/{game_id}/state")

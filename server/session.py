@@ -69,6 +69,8 @@ class GameSession:
     human_seats: frozenset[int]
     ai: dict[int, RandomAI]
     seed: int  # engine seed, kept so a game can be replayed for debugging
+    host_seat: int | None = None  # seat that controls Start (the creator); None if all-AI
+    started: bool = False  # play begins only once the host starts (multi-human lobby)
     event_log: list[Event] = field(default_factory=list)
     seat_tokens: dict[int, str] = field(default_factory=dict)  # claimed human seat -> token
     seat_names: dict[int, str] = field(default_factory=dict)   # claimed human seat -> display name
@@ -77,6 +79,26 @@ class GameSession:
     @property
     def num_players(self) -> int:
         return len(self.state.players)
+
+    # -- lobby / start ------------------------------------------------------ #
+
+    def start(self, convert_unclaimed: bool = False) -> None:
+        """Begin play (idempotent). With ``convert_unclaimed`` (the host pressing
+        Start in a multi-human lobby), any human seat nobody joined becomes an AI
+        seat — so a no-show can't wedge the game. Names every bot and flips the
+        ``started`` flag; the caller drives the opening AI cascade."""
+        if self.started:
+            return
+        if convert_unclaimed:
+            for seat in sorted(self.human_seats):
+                if seat not in self.seat_tokens:
+                    self.ai[seat] = RandomAI(seed=1000 + seat)
+            self.human_seats = frozenset(s for s in self.human_seats if s in self.seat_tokens)
+        # Name the AI seats so the table reads names throughout (humans got theirs
+        # on claim_seat).
+        for n, seat in enumerate(sorted(self.ai), start=1):
+            self.seat_names[seat] = f"Bot {n}"
+        self.started = True
 
     # -- seats -------------------------------------------------------------- #
 
@@ -134,7 +156,7 @@ class GameSession:
     def legal_for_seat(self, seat: int) -> list[Action]:
         """Legal actions for ``seat`` — empty unless it is that seat's turn."""
         self._check_seat(seat)
-        if self.state.phase in _TERMINAL or self.state.to_act != seat:
+        if not self.started or self.state.phase in _TERMINAL or self.state.to_act != seat:
             return []
         return legal_actions(self.state)
 
@@ -156,6 +178,8 @@ class GameSession:
         s = self.state
         return {
             "game_id": self.game_id,
+            "started": self.started,
+            "host_seat": self.host_seat,
             "phase": s.phase.value,
             "to_act": s.to_act if s.phase not in _TERMINAL else None,
             "direction": s.direction,
@@ -179,6 +203,8 @@ class GameSession:
         self._check_seat(seat)
         if seat not in self.human_seats:
             raise SeatError(f"seat {seat} is not a human seat")
+        if not self.started:
+            raise NotYourTurn("the game hasn't started yet")
         if self.state.phase in _TERMINAL:
             raise NotYourTurn("the game is between hands or over")
         if self.state.to_act != seat:
@@ -206,6 +232,8 @@ class GameSession:
         Returns None when a human must act, the game is over, or a hand-over is
         paused for human review. Driving these one at a time (with a delay
         between) is what lets clients watch each AI play its card."""
+        if not self.started:
+            return None  # nothing runs until the host starts the game
         phase = self.state.phase
         if phase is Phase.GAME_OVER:
             return None
@@ -261,7 +289,12 @@ class SessionManager:
         hand_size: int = 7,
         human_seats: frozenset[int] | set[int] | None = None,
         seed: int | None = None,
+        start: bool = True,
     ) -> GameSession:
+        """Create a game. With ``start`` (the default), play begins immediately —
+        AI seats are named and the opening cascade is driven. Pass ``start=False``
+        for a multi-human lobby: the game waits until the host calls
+        :meth:`GameSession.start` (see the ``/start`` endpoint)."""
         if human_seats is None:
             human_seats = frozenset({0})
         human_seats = frozenset(human_seats)
@@ -278,14 +311,12 @@ class SessionManager:
         }
         game_id = secrets.token_urlsafe(8)
         session = GameSession(
-            game_id=game_id, state=state, human_seats=human_seats, ai=ai, seed=seed
+            game_id=game_id, state=state, human_seats=human_seats, ai=ai, seed=seed,
+            host_seat=min(human_seats) if human_seats else None,
         )
-        # Name the AI seats so the table reads names throughout (humans get their
-        # name on claim_seat).
-        for n, seat in enumerate(sorted(ai), start=1):
-            session.seat_names[seat] = f"Bot {n}"
-        # Drive any AI seats that act before the first human turn.
-        session._advance()
+        if start:
+            session.start()      # name bots, flip the flag (no seat conversion)
+            session._advance()   # drive any AI seats before the first human turn
         self._games[game_id] = session
         return session
 

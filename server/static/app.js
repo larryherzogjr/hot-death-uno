@@ -315,13 +315,67 @@ function renderLobby(st) {
     `<span>You are <b>${esc(names[mySeat] || "Player " + mySeat)}</b></span>` +
     `<span class="seats">${roles.join(" · ")}</span>` +
     `<button id="copyBtn" class="copy">Copy invite link</button>`;
-  $("copyBtn").onclick = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(location.href);
-      $("copyBtn").textContent = "Copied!";
-      setTimeout(() => { const b = $("copyBtn"); if (b) b.textContent = "Copy invite link"; }, 1500);
-    }
-  };
+  $("copyBtn").onclick = () => copyInvite($("copyBtn"));
+}
+
+function copyInvite(btn) {
+  if (!navigator.clipboard) return;
+  navigator.clipboard.writeText(location.href);
+  const label = btn.textContent;
+  btn.textContent = "Copied!";
+  setTimeout(() => { btn.textContent = label; }, 1500);
+}
+
+// Pre-game waiting room (multi-human, before the host starts).
+function renderWaiting(st) {
+  const total = Object.keys(st.scores).length;
+  const humans = new Set(st.human_seats);
+  const claimed = new Set(st.claimed_seats);
+  const names = st.names || {};
+  const isHost = st.host_seat === mySeat;
+
+  let rows = "";
+  for (let i = 0; i < total; i++) {
+    let who, cls;
+    if (!humans.has(i)) { who = "AI"; cls = "ai"; }
+    else if (claimed.has(i)) {
+      who = esc(names[i] || "Player " + i)
+        + (i === mySeat ? " <span class=\"me-tag\">you</span>" : "")
+        + (i === st.host_seat ? " <span class=\"host-tag\">host</span>" : "");
+      cls = "in";
+    } else { who = "open — will fill with a bot"; cls = "open"; }
+    rows += `<li class="${cls}"><b>Seat ${i}</b> · ${who}</li>`;
+  }
+
+  const hostName = esc(names[st.host_seat] || "the host");
+  const control = isHost
+    ? `<button id="startBtn" class="start">Start game →</button>` +
+      `<p class="hint">Any open seats become bots.</p>`
+    : `<p class="hint">Waiting for <b>${hostName}</b> to start…</p>`;
+
+  $("waiting").innerHTML =
+    `<h2>Waiting room</h2>` +
+    `<ul class="seatlist">${rows}</ul>` +
+    `<div class="wcontrol">${control}</div>` +
+    `<button id="copyBtn2" class="copy">Copy invite link</button>`;
+
+  if (isHost) $("startBtn").onclick = startGame;
+  $("copyBtn2").onclick = () => copyInvite($("copyBtn2"));
+}
+
+async function startGame() {
+  const btn = $("startBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Starting…"; }
+  try {
+    const r = await fetch(`/api/games/${gameId}/start`, {
+      method: "POST", headers: { "X-HDU-Player": playerToken },
+    });
+    if (!r.ok) throw new Error();
+    // Success broadcasts an update; render() flips us to the table.
+  } catch (e) {
+    flashToast("Couldn't start the game");
+    if (btn) { btn.disabled = false; btn.textContent = "Start game →"; }
+  }
 }
 
 function render() {
@@ -329,6 +383,17 @@ function render() {
   $("intro").hidden = true;
   $("game").hidden = false;
   const st = snap.status;
+
+  // Lobby vs. table: before the host starts a multi-human game, show a waiting
+  // room and hide the play areas.
+  const started = st.started;
+  $("waiting").hidden = started;
+  $("lobby").hidden = !started;
+  for (const sel of [".table", ".me", ".log-wrap"]) {
+    const el = document.querySelector(sel);
+    if (el) el.hidden = !started;
+  }
+  if (!started) { renderWaiting(st); return; }
 
   renderLobby(st);
 
