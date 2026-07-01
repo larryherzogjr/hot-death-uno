@@ -484,11 +484,16 @@ function render() {
     hand.appendChild(el);
   });
   // Eliminated this hand: subdue your own hand and show an overlay, so it's as
-  // obvious to you as it is to the rest of the table.
+  // obvious to you as it is to the rest of the table. Exception: an eliminated
+  // player still owes one action after M.A.D. (choose who to take down) — in
+  // that case keep the controls live instead of covering them.
   const meOut = (st.eliminated || []).includes(mySeat);
-  document.querySelector(".me").classList.toggle("out", meOut);
-  $("meOverlay").hidden = !meOut;
-  $("turnHint").textContent = meOut
+  const meMustAct = meOut && snap.your_turn && (snap.legal_actions || []).length > 0;
+  document.querySelector(".me").classList.toggle("out", meOut && !meMustAct);
+  $("meOverlay").hidden = !(meOut && !meMustAct);
+  $("turnHint").textContent = meMustAct
+    ? "☠ Eliminated — choose who goes down with you"
+    : meOut
     ? "— eliminated this hand"
     : (snap.your_turn
       ? "— click a highlighted card or pick an action below"
