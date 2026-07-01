@@ -483,9 +483,16 @@ function render() {
     }
     hand.appendChild(el);
   });
-  $("turnHint").textContent = snap.your_turn
-    ? "— click a highlighted card or pick an action below"
-    : (st.to_act === null ? "" : "— waiting…");
+  // Eliminated this hand: subdue your own hand and show an overlay, so it's as
+  // obvious to you as it is to the rest of the table.
+  const meOut = (st.eliminated || []).includes(mySeat);
+  document.querySelector(".me").classList.toggle("out", meOut);
+  $("meOverlay").hidden = !meOut;
+  $("turnHint").textContent = meOut
+    ? "— eliminated this hand"
+    : (snap.your_turn
+      ? "— click a highlighted card or pick an action below"
+      : (st.to_act === null ? "" : "— waiting…"));
 
   const actions = $("actions");
   actions.innerHTML = "";
@@ -573,6 +580,8 @@ function pushEvent(e) {
   if (e.type === "DirectionReversed") flashToast("↺ Direction reversed");
   else if (e.type === "UnoCalled") flashToast(`${P(e.player)} — UNO!`);
   else if (e.type === "BastardHand") flashToast("☠ Bastard hand!");
+  else if (e.type === "PlayerEliminated")
+    flashToast(e.player === mySeat ? "☠ You've been eliminated!" : `✖ ${P(e.player)} eliminated`);
 }
 
 function pushLog(text, big) {
