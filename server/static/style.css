@@ -156,6 +156,11 @@ main { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
 .pile .label { position: absolute; bottom: -1.25rem; left: 0; right: 0; text-align: center; font-size: 0.72rem; color: rgba(255,255,255,.75); }
 .pile.drawable { cursor: pointer; }
 .pile.drawable:hover { transform: translateY(-3px); }
+/* When drawing is a legal move, outline the top card like a playable hand card. */
+.pile.drawable .back.top {
+  outline: 2px solid #fff; outline-offset: 1px;
+  box-shadow: 0 0 10px 2px rgba(110, 168, 254, 0.55);
+}
 .discard.ring-red    { box-shadow: 0 0 0 3px var(--red),    0 0 18px rgba(216,69,74,.6); border-radius: 11px; }
 .discard.ring-yellow { box-shadow: 0 0 0 3px var(--yellow), 0 0 18px rgba(224,176,32,.6); border-radius: 11px; }
 .discard.ring-green  { box-shadow: 0 0 0 3px var(--green),  0 0 18px rgba(47,170,85,.6); border-radius: 11px; }

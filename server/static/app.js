@@ -445,18 +445,22 @@ function render() {
   // draw pile — a face-down deck; click to draw when it's your turn
   const draw = $("drawpile");
   draw.innerHTML = "";
+  const drawable = canDraw && snap.your_turn;
   const deckN = Math.min(snap.view.draw_count, 4);
+  let topBack = null;
   for (let i = 0; i < Math.max(deckN, 1); i++) {
     const b = backEl(false);
     b.style.transform = `translate(${i}px, ${-i}px)`;
     draw.appendChild(b);
+    topBack = b;
   }
+  if (drawable && topBack) topBack.classList.add("top");  // outline the visible card
   const dlbl = document.createElement("div");
   dlbl.className = "label";
-  dlbl.textContent = (canDraw && snap.your_turn) ? "Draw" : `${snap.view.draw_count} left`;
+  dlbl.textContent = drawable ? "Draw" : `${snap.view.draw_count} left`;
   draw.appendChild(dlbl);
-  draw.classList.toggle("drawable", canDraw && snap.your_turn);
-  draw.onclick = (canDraw && snap.your_turn) ? () => submit({ type: "draw_card" }) : null;
+  draw.classList.toggle("drawable", drawable);
+  draw.onclick = drawable ? () => submit({ type: "draw_card" }) : null;
 
   // discard pile — top card, ringed in the active color, dealt-in when it changes
   const disc = $("discard");
