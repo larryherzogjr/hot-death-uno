@@ -17,6 +17,8 @@ import secrets
 from pathlib import Path
 from typing import Any
 
+from hdu.cards import DECK_SIZE
+
 from fastapi import (
     FastAPI,
     Header,
@@ -29,7 +31,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import auth
@@ -47,12 +49,31 @@ from .session import (
     SessionManager,
 )
 
-app = FastAPI(title="Hot Death Uno", version="0.1.0")
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _cors_origins() -> list[str]:
+    configured = os.environ.get("HDU_ALLOWED_ORIGINS", "").strip()
+    if configured:
+        return [origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()]
+    base = os.environ.get("HDU_BASE_URL", "").strip().rstrip("/")
+    return [base] if base else ["http://127.0.0.1:8000", "http://localhost:8000"]
+
+
+_BASE_URL = os.environ.get("HDU_BASE_URL", "").strip()
+_SECURE_COOKIES = _env_flag("HDU_SECURE_COOKIES", _BASE_URL.startswith("https://"))
+
+app = FastAPI(title="Hot Death Uno", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # fine for self-hosted user testing
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-HDU-Passcode", "X-HDU-Player"],
 )
 # Signs the session cookie used for OAuth. Set HDU_SESSION_SECRET for logins to
 # survive restarts; otherwise a random per-process secret is used.
@@ -60,19 +81,28 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=os.environ.get("HDU_SESSION_SECRET") or secrets.token_urlsafe(32),
     same_site="lax",
+    https_only=_SECURE_COOKIES,
 )
 
 
 @app.middleware("http")
-async def no_cache_static(request: Request, call_next):
-    """Make browsers revalidate the SPA assets every load, so a deploy is picked
-    up immediately instead of running a stale mix of cached old/new files."""
+async def response_headers(request: Request, call_next):
+    """Apply cache policy and baseline browser security headers."""
     response = await call_next(request)
     if not request.url.path.startswith("/api"):
         response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; "
+        "img-src 'self' data:; style-src 'self'; script-src 'self'; "
+        "connect-src 'self' ws: wss:; form-action 'self'"
+    )
     return response
 
 manager = SessionManager()
+_SESSION_TTL_SECONDS = float(os.environ.get("HDU_SESSION_TTL", "86400"))
 
 
 # --------------------------------------------------------------------------- #
@@ -256,6 +286,14 @@ class CreateGameRequest(BaseModel):
     seed: int | None = None
     name: str | None = None
 
+    @model_validator(mode="after")
+    def validate_deal_size(self) -> "CreateGameRequest":
+        if self.hand_size * self.num_players + 1 > DECK_SIZE:
+            raise ValueError(
+                f"{self.num_players} players with {self.hand_size} cards exceeds the deck"
+            )
+        return self
+
 
 @app.post("/api/games")
 async def create_game(
@@ -263,6 +301,7 @@ async def create_game(
     req: CreateGameRequest,
     x_hdu_passcode: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    _cleanup_stale_games()
     user = auth.current_user(request)
     if auth.require_login() and user is None:
         raise HTTPException(status_code=401, detail="sign-in required")
@@ -345,13 +384,20 @@ class ActionRequest(BaseModel):
     player: int | None = None
 
 
+def _decode_action(payload: dict[str, Any]):
+    try:
+        return decode_action(payload)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="invalid action payload") from exc
+
+
 @app.post("/api/games/{game_id}/action")
 async def post_action(
     game_id: str, action: ActionRequest, x_hdu_player: str | None = Header(default=None)
 ) -> dict[str, Any]:
     session = manager.get(game_id)
     seat = _seat_of(session, x_hdu_player)
-    events = session.apply_human(seat, decode_action(action.model_dump(exclude_none=True)))
+    events = session.apply_human(seat, _decode_action(action.model_dump(exclude_none=True)))
     await hub.broadcast(game_id, session, events)  # show the human's move at once
     await _drive_ai(game_id)  # then pace the AI cascade
     return {"events": encode_events(events), "snapshot": snapshot(session, seat)}
@@ -391,6 +437,9 @@ class Hub:
             if not conns:
                 self._conns.pop(game_id, None)
 
+    def has_connections(self, game_id: str) -> bool:
+        return bool(self._conns.get(game_id))
+
     async def broadcast(self, game_id: str, session: GameSession, events: list) -> None:
         payload_events = encode_events(events)
         dead: list[tuple[int, WebSocket]] = []
@@ -419,12 +468,32 @@ class Hub:
 hub = Hub()
 
 
+def _cleanup_stale_games() -> None:
+    """Expire idle games when new work arrives, preserving connected tables."""
+    for game_id in manager.expired_game_ids(_SESSION_TTL_SECONDS):
+        if hub.has_connections(game_id):
+            continue
+        manager.remove(game_id)
+        _drive_locks.pop(game_id, None)
+
+
 @app.websocket("/api/games/{game_id}/ws")
-async def game_ws(websocket: WebSocket, game_id: str, token: str = Query(...)) -> None:
+async def game_ws(websocket: WebSocket, game_id: str) -> None:
     await websocket.accept()
     try:
+        auth_message = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+        if not isinstance(auth_message, dict) or auth_message.get("type") != "auth":
+            await websocket.close(code=4401)
+            return
+        token = auth_message.get("token")
+        if not isinstance(token, str):
+            await websocket.close(code=4401)
+            return
         session = manager.get(game_id)
         seat = session.seat_for_token(token)
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        await websocket.close(code=4401)
+        return
     except GameNotFound:
         await websocket.close(code=4404)
         return
@@ -439,15 +508,24 @@ async def game_ws(websocket: WebSocket, game_id: str, token: str = Query(...)) -
             await websocket.send_json({"type": "chat_history", "messages": session.chat_log})
         while True:
             msg = await websocket.receive_json()
+            if not isinstance(msg, dict):
+                await websocket.send_json({"type": "error", "detail": "invalid message"})
+                continue
             kind = msg.get("type")
             if kind in ("action", "continue"):
                 try:
                     if kind == "action":
-                        events = session.apply_human(seat, decode_action(msg["action"]))
+                        action_payload = msg.get("action")
+                        if not isinstance(action_payload, dict):
+                            raise ValueError("missing action")
+                        events = session.apply_human(seat, decode_action(action_payload))
                     else:
                         events = session.settle_pending(seat)
                 except SessionError as exc:
                     await websocket.send_json({"type": "error", "detail": str(exc)})
+                    continue
+                except (KeyError, TypeError, ValueError):
+                    await websocket.send_json({"type": "error", "detail": "invalid action payload"})
                     continue
                 await hub.broadcast(game_id, session, events)  # human's move
                 await _drive_ai(game_id)  # paced AI cascade

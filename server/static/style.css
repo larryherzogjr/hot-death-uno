@@ -15,6 +15,7 @@
 }
 
 * { box-sizing: border-box; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 body {
   margin: 0;
   font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -186,7 +187,7 @@ main { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
   position: absolute; top: 2px; right: 3px; width: 15px; height: 15px;
   border-radius: 50%; background: rgba(0,0,0,.35); color: #fff;
   font-size: 0.65rem; font-weight: 700; line-height: 15px; text-align: center;
-  text-shadow: none; cursor: pointer; z-index: 2;
+  text-shadow: none; cursor: pointer; z-index: 2; border: 0; padding: 0;
 }
 .card .lbl { font-size: 0.8rem; line-height: 1.05; }
 .card .num { font-size: 1.7rem; align-self: flex-end; line-height: 1; }
@@ -304,6 +305,26 @@ main { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
   box-shadow: 0 6px 20px rgba(0,0,0,.5); animation: toastIn .25s ease;
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+@media (max-width: 600px) {
+  header { align-items: flex-start; padding: 0.7rem 0.85rem; }
+  header h1 { width: 100%; }
+  .newgame { width: 100%; }
+  .newgame button { min-height: 42px; }
+  main { padding-inline: 0.65rem; }
+  .opp { min-width: 105px; }
+  .play { gap: 1.5rem; }
+  .card { width: 70px; height: 100px; }
+  .pile { width: 70px; height: 100px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 
 /* ---- card tooltip -------------------------------------------------------- */
 .tip {

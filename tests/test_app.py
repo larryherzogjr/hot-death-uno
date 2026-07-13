@@ -42,6 +42,11 @@ def _start(client, gid, host_token):
     return client.post(f"/api/games/{gid}/start", headers=_hdr(host_token))
 
 
+def _ws_auth(ws, token):
+    ws.send_json({"type": "auth", "token": token})
+    return ws.receive_json()
+
+
 # --------------------------------------------------------------------------- #
 # Single-player basics.
 # --------------------------------------------------------------------------- #
@@ -52,6 +57,14 @@ def test_create_returns_seat_and_token(client):
     assert data["seat"] == 0  # the creator is seated first
     assert data["player_token"]
     assert data["status"]["card_count"] == 113
+
+
+def test_create_rejects_a_deal_larger_than_the_deck(client):
+    r = client.post(
+        "/api/games",
+        json={"num_players": 10, "num_humans": 1, "hand_size": 15, "seed": 1},
+    )
+    assert r.status_code == 422
 
 
 def test_state_requires_a_token_and_is_redacted(client):
@@ -106,6 +119,17 @@ def test_illegal_action_is_422(client):
     )
     assert r.status_code == 422
     assert r.json()["error"] == "IllegalAction"
+
+
+def test_malformed_action_is_422(client):
+    g = _new_game(client)
+    r = client.post(
+        f"/api/games/{g['game_id']}/action",
+        headers=_hdr(g["player_token"]),
+        json={"type": "play_card"},
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "invalid action payload"
 
 
 # --------------------------------------------------------------------------- #
@@ -193,6 +217,13 @@ def test_healthz(client):
     assert r.json() == {"status": "ok"}
 
 
+def test_security_headers_present(client):
+    r = client.get("/")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
+    assert r.headers["permissions-policy"]
+
+
 def test_no_passcode_required_when_unset(client):
     assert client.get("/api/config").json()["passcode_required"] is False
     assert client.post("/api/games", json={"seed": 1}).status_code == 200
@@ -256,8 +287,8 @@ def test_spa_index_is_no_cache_with_versioned_assets(client):
 def test_websocket_pushes_snapshot_and_updates(client):
     g = _new_game(client)
     gid, tok = g["game_id"], g["player_token"]
-    with client.websocket_connect(f"/api/games/{gid}/ws?token={tok}") as ws:
-        first = ws.receive_json()
+    with client.websocket_connect(f"/api/games/{gid}/ws") as ws:
+        first = _ws_auth(ws, tok)
         assert first["type"] == "snapshot"
         snap = first["snapshot"]
         assert snap["view"]["me"] == 0
@@ -275,8 +306,8 @@ def test_name_recorded_and_chat_broadcasts(client):
     # The name is in the public status.
     assert _state(client, gid, tok)["status"]["names"]["0"] == "Alice"
     # Chat over the WS echoes back to the sender (and everyone).
-    with client.websocket_connect(f"/api/games/{gid}/ws?token={tok}") as ws:
-        ws.receive_json()  # snapshot
+    with client.websocket_connect(f"/api/games/{gid}/ws") as ws:
+        _ws_auth(ws, tok)  # snapshot
         ws.send_json({"type": "chat", "text": "hello table"})
         m = ws.receive_json()
         assert m["type"] == "chat"
@@ -348,5 +379,32 @@ def test_humans_watching_drives_pacing(client):
 def test_websocket_rejects_bad_token(client):
     g = _new_game(client)
     with pytest.raises(Exception):  # connection closed (4401) before any message
-        with client.websocket_connect(f"/api/games/{g['game_id']}/ws?token=bogus") as ws:
+        with client.websocket_connect(f"/api/games/{g['game_id']}/ws") as ws:
+            ws.send_json({"type": "auth", "token": "bogus"})
             ws.receive_json()
+
+
+def test_websocket_handles_a_malformed_action_without_disconnect(client):
+    g = _new_game(client)
+    with client.websocket_connect(f"/api/games/{g['game_id']}/ws") as ws:
+        _ws_auth(ws, g["player_token"])
+        ws.send_json({"type": "action", "action": {"type": "play_card"}})
+        error = ws.receive_json()
+        assert error == {"type": "error", "detail": "invalid action payload"}
+
+
+def test_idle_games_are_cleaned_up_on_create(client, monkeypatch):
+    g = _new_game(client)
+    manager.get(g["game_id"]).last_activity = 0
+    monkeypatch.setattr("server.app._SESSION_TTL_SECONDS", 1)
+    _new_game(client, seed=10)
+    assert g["game_id"] not in manager._games
+
+
+def test_accessibility_contract_is_present(client):
+    html = client.get("/").text
+    js = client.get("/app.js").text
+    css = client.get("/style.css").text
+    assert 'role="dialog"' in html and 'aria-modal="true"' in html
+    assert "makeKeyboardControl" in js
+    assert "prefers-reduced-motion" in css

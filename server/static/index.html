@@ -26,26 +26,26 @@
         </select>
       </label>
       <span id="auth" class="auth"></span>
-      <input id="nameInput" class="nameinput" type="text" placeholder="your name" maxlength="24" />
-      <input id="passcode" class="passcode" type="password" placeholder="passcode" hidden />
+      <input id="nameInput" class="nameinput" type="text" placeholder="your name" aria-label="Your name" maxlength="24" />
+      <input id="passcode" class="passcode" type="password" placeholder="passcode" aria-label="Game creation passcode" hidden />
       <button id="newGameBtn">New game</button>
       <button id="rulesBtn" class="ghost">Rules</button>
-      <span id="conn" class="conn"></span>
+      <span id="conn" class="conn" role="status" aria-live="polite"></span>
     </div>
   </header>
 
   <main id="game" hidden>
     <section id="lobby" class="lobby"></section>
     <section id="waiting" class="waiting" hidden></section>
-    <section id="status" class="status"></section>
+    <section id="status" class="status" aria-live="polite"></section>
 
     <section class="table">
       <div id="opponents" class="opponents"></div>
       <div class="play">
-        <div id="drawpile" class="pile" title="Draw pile"></div>
+        <div id="drawpile" class="pile" title="Draw pile" aria-label="Draw pile"></div>
         <div id="discard" class="pile discard"></div>
       </div>
-      <div id="pending" class="pending"></div>
+      <div id="pending" class="pending" role="status" aria-live="polite"></div>
     </section>
 
     <section class="me">
@@ -62,7 +62,7 @@
       <h2>Chat</h2>
       <div id="chatLog" class="chat-log"></div>
       <form id="chatForm" class="chat-form" autocomplete="off">
-        <input id="chatInput" type="text" placeholder="Say something…" maxlength="500" />
+        <input id="chatInput" type="text" placeholder="Say something…" aria-label="Chat message" maxlength="500" />
         <button type="submit">Send</button>
       </form>
     </section>
@@ -77,12 +77,12 @@
 
   <p id="intro" class="intro">Start a new game — you are <b>Player 0</b> versus AI opponents.</p>
 
-  <div id="toast" class="toast" hidden></div>
-  <div id="tip" class="tip" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="assertive" hidden></div>
+  <div id="tip" class="tip" role="tooltip" hidden></div>
 
-  <div id="rulesModal" class="modal" hidden>
-    <div class="modal-box">
-      <button id="rulesClose" class="modal-close">×</button>
+  <div id="rulesModal" class="modal" role="dialog" aria-modal="true" aria-label="Game rules" hidden>
+    <div class="modal-box" tabindex="-1">
+      <button id="rulesClose" class="modal-close" aria-label="Close rules">×</button>
       <div id="rulesBody"></div>
     </div>
   </div>

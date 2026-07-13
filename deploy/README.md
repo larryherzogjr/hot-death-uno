@@ -127,6 +127,13 @@ per-session work.
 - **In-memory sessions, single worker.** Restarting the container drops live
   games. Scaling to multiple workers would need a shared session store (the
   `SessionManager` is kept behind one interface to make that swap clean).
+- **Idle-session cleanup.** Abandoned games expire after `HDU_SESSION_TTL`
+  seconds (one day by default) when new games are created. Connected games are
+  never removed by cleanup.
+- **Origin and cookie hardening.** `HDU_ALLOWED_ORIGINS` should contain the
+  public HTTPS origin, and `HDU_SECURE_COOKIES=1` should remain enabled in
+  production. WebSocket player tokens are sent in the first socket message and
+  are not placed in access-log URLs.
 - The published Docker port is bound to `127.0.0.1`, so the app is reachable
   **only** via nginx, never directly from the internet.
 - **Gating testers:** only *game creation* is gated (existing games are reached

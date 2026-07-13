@@ -145,15 +145,21 @@ function connect() {
   chatMsgs = [];
   renderChat();
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/api/games/${gameId}/ws?token=${encodeURIComponent(playerToken)}`);
+  ws = new WebSocket(`${proto}://${location.host}/api/games/${gameId}/ws`);
   setConn("connecting…", "");
 
-  ws.onopen = () => setConn("connected", "ok");
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: "auth", token: playerToken }));
+    setConn("authenticating…", "");
+  };
   ws.onclose = () => setConn("disconnected", "bad");
   ws.onerror = () => setConn("error", "bad");
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.type === "snapshot") { snap = msg.snapshot; mySeat = snap.view.me; render(); }
+    if (msg.type === "snapshot") {
+      setConn("connected", "ok");
+      snap = msg.snapshot; mySeat = snap.view.me; render();
+    }
     else if (msg.type === "update") {
       (msg.events || []).forEach(pushEvent);
       snap = msg.snapshot; mySeat = snap.view.me; render();
@@ -205,6 +211,7 @@ function pname(id) {
 function cardEl(card, small) {
   const div = document.createElement("div");
   div.className = "card " + card.color.toLowerCase() + (small ? " small" : "");
+  div.setAttribute("aria-label", card.name);
   const lbl = document.createElement("div");
   lbl.className = "lbl";
   lbl.textContent = card.wild ? card.name : card.name.replace(/^\w+\s/, "");
@@ -242,9 +249,11 @@ function attachTip(el, card, small) {
   el.addEventListener("mouseenter", () => { if (!tipPinned) showTip(card, el, false); });
   el.addEventListener("mouseleave", () => hideTip(false));
   if (!small) {
-    const badge = document.createElement("span");
+    const badge = document.createElement("button");
+    badge.type = "button";
     badge.className = "badge";
     badge.textContent = "?";
+    badge.setAttribute("aria-label", `Help for ${card.name}`);
     badge.addEventListener("click", (e) => { e.stopPropagation(); showTip(card, el, true); });
     el.appendChild(badge);
   }
@@ -274,7 +283,15 @@ function hideTip(force) {
 }
 
 // --- rules modal ------------------------------------------------------------
-function closeRules() { $("rulesModal").hidden = true; }
+let rulesReturnFocus = null;
+
+function closeRules() {
+  const modal = $("rulesModal");
+  if (modal.hidden) return;
+  modal.hidden = true;
+  if (rulesReturnFocus && typeof rulesReturnFocus.focus === "function") rulesReturnFocus.focus();
+  rulesReturnFocus = null;
+}
 
 async function openRules() {
   if (!catalogList.length) await loadCatalog();  // ensure it's loaded on demand
@@ -294,7 +311,22 @@ async function openRules() {
     }
   }
   $("rulesBody").innerHTML = html;
+  rulesReturnFocus = document.activeElement;
   $("rulesModal").hidden = false;
+  $("rulesClose").focus();
+}
+
+function makeKeyboardControl(el, label, handler) {
+  el.setAttribute("role", "button");
+  el.setAttribute("tabindex", "0");
+  el.setAttribute("aria-label", label);
+  el.onclick = handler;
+  el.onkeydown = (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handler();
+    }
+  };
 }
 
 function renderLobby(st) {
@@ -460,7 +492,11 @@ function render() {
   dlbl.textContent = drawable ? "Draw" : `${snap.view.draw_count} left`;
   draw.appendChild(dlbl);
   draw.classList.toggle("drawable", drawable);
-  draw.onclick = drawable ? () => submit({ type: "draw_card" }) : null;
+  draw.removeAttribute("role");
+  draw.removeAttribute("tabindex");
+  draw.onclick = null;
+  draw.onkeydown = null;
+  if (drawable) makeKeyboardControl(draw, "Draw a card", () => submit({ type: "draw_card" }));
 
   // discard pile — top card, ringed in the active color, dealt-in when it changes
   const disc = $("discard");
@@ -483,7 +519,11 @@ function render() {
     if (act && snap.your_turn) {
       el.classList.add("playable");
       el.title = act.type === "reveal" ? "Reveal" : "Play";
-      el.onclick = () => submit(act);
+      makeKeyboardControl(
+        el,
+        `${act.type === "reveal" ? "Reveal" : "Play"} ${card.name}`,
+        () => submit(act),
+      );
     }
     hand.appendChild(el);
   });

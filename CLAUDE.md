@@ -1,4 +1,8 @@
-# CLAUDE.md
+# CLAUDE.md (legacy compatibility)
+
+Codex and other maintainers should read `AGENTS.md` first. This file remains for
+Claude Code compatibility and for its detailed historical project notes. The
+current suite contains 209 tests; older counts below are historical snapshots.
 
 Standing conventions for this repo. Read every session. The detailed build spec — milestones, full card mechanics, the response-stack design, scoring order — lives in `HANDOFF.md`; this file is only the durable rules. When the two disagree, `HANDOFF.md` wins on *what* to build and this file wins on *how* to work.
 

@@ -23,6 +23,9 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - HDU_BASE_URL=${HDU_BASE_URL:-}
       - HDU_SESSION_SECRET=${HDU_SESSION_SECRET:-}
+      - HDU_SECURE_COOKIES=${HDU_SECURE_COOKIES:-1}
+      - HDU_ALLOWED_ORIGINS=${HDU_ALLOWED_ORIGINS:-https://hdu.ospdy.com}
+      - HDU_SESSION_TTL=${HDU_SESSION_TTL:-86400}
       - HDU_REQUIRE_LOGIN=${HDU_REQUIRE_LOGIN:-}
       - HDU_ALLOWED_EMAILS=${HDU_ALLOWED_EMAILS:-}
       # Multiple access codes, hand-out/revoke live by editing the file. To use:

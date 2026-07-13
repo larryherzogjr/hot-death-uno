@@ -18,6 +18,7 @@ matter of which seats are in ``human_seats``.
 from __future__ import annotations
 
 import secrets
+import time
 from dataclasses import dataclass, field
 
 from hdu.actions import Action
@@ -75,10 +76,15 @@ class GameSession:
     seat_tokens: dict[int, str] = field(default_factory=dict)  # claimed human seat -> token
     seat_names: dict[int, str] = field(default_factory=dict)   # claimed human seat -> display name
     chat_log: list[dict] = field(default_factory=list)         # recent chat (capped)
+    last_activity: float = field(default_factory=time.monotonic, repr=False)
 
     @property
     def num_players(self) -> int:
         return len(self.state.players)
+
+    def touch(self) -> None:
+        """Record meaningful use so abandoned in-memory games can be expired."""
+        self.last_activity = time.monotonic()
 
     # -- lobby / start ------------------------------------------------------ #
 
@@ -107,6 +113,7 @@ class GameSession:
         otherwise the lowest unclaimed human seat is assigned a fresh token.
         Raises :class:`GameFull` when every human seat is taken."""
         name = _clean_name(name)
+        self.touch()
         if token is not None:
             for seat, t in self.seat_tokens.items():
                 if t == token:
@@ -115,7 +122,7 @@ class GameSession:
                     return seat, token
         for seat in sorted(self.human_seats):
             if seat not in self.seat_tokens:
-                new = secrets.token_urlsafe(8)
+                new = secrets.token_urlsafe(24)
                 self.seat_tokens[seat] = new
                 self.seat_names[seat] = name or f"Player {seat}"
                 return seat, new
@@ -124,6 +131,7 @@ class GameSession:
     def add_chat(self, seat: int, text: str) -> dict:
         """Record a chat message from a seated player and return it for broadcast."""
         self._check_seat(seat)
+        self.touch()
         if seat not in self.seat_tokens:
             raise SeatError("only seated players can chat")
         text = (text or "").strip()[:500]
@@ -140,6 +148,7 @@ class GameSession:
         if token is not None:
             for seat, t in self.seat_tokens.items():
                 if t == token:
+                    self.touch()
                     return seat
         raise SeatError("unknown or missing player token")
 
@@ -211,6 +220,7 @@ class GameSession:
             raise NotYourTurn(f"it is seat {self.state.to_act}'s turn, not {seat}")
         if action not in legal_actions(self.state):
             raise IllegalAction(f"{action!r} is not legal right now")
+        self.touch()
         self.state, events = apply(self.state, action)
         self.event_log.extend(events)
         return list(events)
@@ -223,6 +233,7 @@ class GameSession:
             raise SeatError(f"seat {seat} is not a human seat")
         if self.state.phase is not Phase.HAND_OVER:
             raise NotYourTurn("there is no finished hand to continue")
+        self.touch()
         self.state, events = settle_hand(self.state)
         self.event_log.extend(events)
         return list(events)
@@ -309,7 +320,7 @@ class SessionManager:
             for seat in range(num_players)
             if seat not in human_seats
         }
-        game_id = secrets.token_urlsafe(8)
+        game_id = secrets.token_urlsafe(16)
         session = GameSession(
             game_id=game_id, state=state, human_seats=human_seats, ai=ai, seed=seed,
             host_seat=min(human_seats) if human_seats else None,
@@ -328,6 +339,17 @@ class SessionManager:
 
     def remove(self, game_id: str) -> None:
         self._games.pop(game_id, None)
+
+    def expired_game_ids(self, ttl_seconds: float, now: float | None = None) -> list[str]:
+        """Return games idle longer than ``ttl_seconds`` without mutating the registry."""
+        if ttl_seconds <= 0:
+            return []
+        current = time.monotonic() if now is None else now
+        return [
+            game_id
+            for game_id, session in self._games.items()
+            if current - session.last_activity > ttl_seconds
+        ]
 
     def __len__(self) -> int:
         return len(self._games)
