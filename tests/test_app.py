@@ -408,3 +408,5 @@ def test_accessibility_contract_is_present(client):
     assert 'role="dialog"' in html and 'aria-modal="true"' in html
     assert "makeKeyboardControl" in js
     assert "prefers-reduced-motion" in css
+    assert 'classList.add("available")' in js
+    assert ".actions button.available" in css

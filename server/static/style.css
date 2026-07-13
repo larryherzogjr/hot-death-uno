@@ -253,8 +253,16 @@ main { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
 .actions button {
   font: inherit; font-weight: 600; cursor: pointer; padding: 0.5rem 0.9rem;
   border-radius: 7px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+  transition: transform .12s, box-shadow .12s;
 }
-.actions button:hover { border-color: var(--accent); }
+.actions button.available {
+  outline: 2px solid #fff; outline-offset: 1px;
+  box-shadow: 0 0 10px 2px rgba(110, 168, 254, 0.55);
+}
+.actions button.available:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 0 14px 3px rgba(110, 168, 254, 0.72);
+}
 .actions button.c-red { background: var(--red); border: none; color: #fff; }
 .actions button.c-yellow { background: var(--yellow); border: none; color: #2a2100; }
 .actions button.c-green { background: var(--green); border: none; color: #fff; }

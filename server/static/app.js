@@ -584,6 +584,7 @@ function actionButton(a) {
   else if (a.type === "choose_color") { b.textContent = a.color; b.className = "c-" + a.color.toLowerCase(); }
   else if (a.type === "choose_victim") b.textContent = "Target " + pname(a.player);
   else b.textContent = a.type;
+  b.classList.add("available");
   b.onclick = () => submit(a);
   return b;
 }
