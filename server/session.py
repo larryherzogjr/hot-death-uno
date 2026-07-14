@@ -10,9 +10,8 @@ Hidden information stays server-side: clients receive a per-seat ``view_for``
 (other hands redacted). Events are public (they never reveal a hidden hand), so
 the event log is shared across seats and backs catch-up/resync via a cursor.
 
-Seat identity is first-class from day one: single-player is just "seat 0 is
-human, the rest are AI." Adding human seats later (real multiplayer) is only a
-matter of which seats are in ``human_seats``.
+Seat identity is first-class: single-player is just "seat 0 is human, the rest
+are AI," while multiplayer marks additional seats in ``human_seats``.
 """
 
 from __future__ import annotations

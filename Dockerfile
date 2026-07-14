@@ -7,8 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Install runtime deps first for layer caching.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt constraints.txt ./
+RUN pip install --no-cache-dir --constraint constraints.txt -r requirements.txt
 
 # App code: the pure engine and the server consumer (incl. static SPA).
 COPY hdu/ ./hdu/

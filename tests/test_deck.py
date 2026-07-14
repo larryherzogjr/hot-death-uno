@@ -8,15 +8,13 @@ import pytest
 
 from hdu.cards import (
     DECK_SIZE,
-    Card,
     CardId,
     Color,
     build_deck,
     display_name,
 )
-from hdu.engine import card_count, new_hand
+from hdu.engine import new_hand
 from hdu.view import view_for
-
 from tests.helpers import assert_conservation
 
 # Specials that must appear exactly once in the deck.

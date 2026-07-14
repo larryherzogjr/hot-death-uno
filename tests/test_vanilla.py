@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from hdu.actions import ChooseColor, DrawCard, Pass, PlayCard
+from hdu.actions import ChooseColor, DrawCard, PlayCard
 from hdu.cards import Card, CardId, Color
 from hdu.effects import matches
 from hdu.engine import apply, card_count, legal_actions, new_hand
 from hdu.play import play_hand
 from hdu.players.random_ai import RandomAI
 from hdu.state import DiscardEntry, GameState, Phase, PlayerState
-
-from tests.helpers import assert_conservation
 
 # --------------------------------------------------------------------------- #
 # Hand-built states for precise effect assertions. We don't need a full deck in

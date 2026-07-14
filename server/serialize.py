@@ -21,7 +21,7 @@ from hdu.actions import (
     PlayCard,
     Reveal,
 )
-from hdu.cards import Card, CardId, Color, display_name
+from hdu.cards import Card, Color, display_name
 from hdu.events import CardPlayed, ColorChosen, Event, GameOver, HandScored
 from hdu.scoring import card_held_value
 from hdu.state import DiscardEntry, Pending

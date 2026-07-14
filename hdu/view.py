@@ -1,7 +1,7 @@
 """Perspective filtering — present from day one (HANDOFF §2).
 
 ``view_for(state, player_id)`` redacts other players' hands down to counts. The
-AI and any future network client consume the *view*, never raw ``GameState``.
+AI and network clients consume the *view*, never raw ``GameState``.
 Turn/legal-action logic is layered on in M1+; M0 establishes the seam.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .cards import Card, Color
+from .cards import Card
 from .state import DiscardEntry, GameState, Pending, Phase
 
 

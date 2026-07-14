@@ -11,7 +11,7 @@ import random
 from hdu.actions import ChooseColor, PlayCard
 from hdu.cards import Card, CardId, Color
 from hdu.effects import matches
-from hdu.engine import apply, legal_actions
+from hdu.engine import apply
 from hdu.scoring import card_held_value, card_points, new_aids_counts, score_hand
 from hdu.state import DiscardEntry, GameState, Phase, PlayerState
 

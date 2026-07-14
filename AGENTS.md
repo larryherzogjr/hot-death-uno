@@ -13,8 +13,11 @@ controls repository practices.
 
 ## Architectural boundaries
 
-- `hdu/` is a pure, framework-free engine. Keep it free of I/O, networking,
-  wall-clock behavior, global mutable state, and unseeded randomness.
+- The rules kernel in `hdu/` (`engine`, `cards`, `state`, `actions`, `effects`,
+  `scoring`, `events`, `rng`, and `view`) is pure and framework-free. The
+  colocated CLI, play harness, and AI players are consumers. Keep I/O,
+  networking, wall-clock behavior, global mutable state, and unseeded
+  randomness out of the kernel.
 - `hdu.engine.apply(state, action)` and `hdu.engine.legal_actions(state)` are
   the authoritative rules boundary. Do not duplicate legality or card effects
   in the client, server, CLI, or AI.
@@ -44,6 +47,8 @@ controls repository practices.
 Run before considering a change complete:
 
 ```bash
+.venv/bin/ruff check hdu server tests
+.venv/bin/mypy hdu server
 .venv/bin/python -m pytest -q
 .venv/bin/python -m pip check
 ```
@@ -58,8 +63,8 @@ The test suite must preserve these invariants:
 Useful local commands:
 
 ```bash
-.venv/bin/python -m hdu.cli
-.venv/bin/python -m hdu.cli --game
+.venv/bin/python -m hdu.cli              # narrated all-AI hand
+.venv/bin/python -m hdu.cli --game       # all-AI game to 1000
 .venv/bin/uvicorn server.app:app --reload
 ```
 

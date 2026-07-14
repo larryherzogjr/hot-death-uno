@@ -17,8 +17,6 @@ import secrets
 from pathlib import Path
 from typing import Any
 
-from hdu.cards import DECK_SIZE
-
 from fastapi import (
     FastAPI,
     Header,
@@ -34,8 +32,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth
+from hdu.cards import DECK_SIZE
 
+from . import auth
 from .catalog import catalog_payload
 from .serialize import decode_action, encode_actions, encode_events, encode_view
 from .session import (
@@ -48,6 +47,7 @@ from .session import (
     SessionError,
     SessionManager,
 )
+
 
 def _env_flag(name: str, default: bool = False) -> bool:
     value = os.environ.get(name)
@@ -443,7 +443,10 @@ class Hub:
     async def broadcast(self, game_id: str, session: GameSession, events: list) -> None:
         payload_events = encode_events(events)
         dead: list[tuple[int, WebSocket]] = []
-        for seat, ws in self._conns.get(game_id, set()):
+        # Sending yields to the event loop. A client may connect or disconnect
+        # before the next iteration, so iterate over a snapshot rather than the
+        # live set (which would raise "set changed size during iteration").
+        for seat, ws in list(self._conns.get(game_id, set())):
             try:
                 await ws.send_json(
                     {"type": "update", "events": payload_events, "snapshot": snapshot(session, seat)}

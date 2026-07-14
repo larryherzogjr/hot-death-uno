@@ -8,9 +8,9 @@ Two distinct notions live here, and keeping them apart matters:
 * **effect kind** — what a card *does* when resolved. This is where specials
   graduate out of their vanilla base, one milestone at a time.
 
-Still on their vanilla base (not yet implemented): Reverse Skip resolves as a
-plain Reverse; every wild-type (Draw Four and the HDU wild specials) resolves as
-a plain Wild. The response-stack resolver will live here too (M4).
+This module classifies printed match symbols and colored effects. Wild-specific
+resolution and the response stack live in ``engine.py`` because they depend on
+the current phase and pending attack state.
 """
 
 from __future__ import annotations

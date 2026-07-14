@@ -1,13 +1,12 @@
 """Core state model: frozen dataclasses describing a game in progress.
 
 These mirror HANDOFF §3. Everything is immutable; the engine returns new state
-objects rather than mutating. ``Pending`` (the response/attack stack) is carried
-now so the shape is stable, even though no card populates it until M4.
+objects rather than mutating. ``Pending`` carries every response/attack window.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 from .cards import Card, CardId, Color
@@ -54,7 +53,7 @@ class PlayerState:
 @dataclass(frozen=True)
 class Pending:
     """The response/attack stack. ``None`` on GameState means we are not in
-    stack-resolution mode. Fully exercised in M4."""
+    stack-resolution mode."""
 
     kind: str  # "draw_stack" | "quitter" | "spreader" | "glasnost"
     target: int  # player who must respond

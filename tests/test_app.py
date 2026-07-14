@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
-from server.app import app, manager
+from server.app import Hub, app, manager
 
 
 @pytest.fixture(autouse=True)
@@ -298,6 +300,28 @@ def test_websocket_pushes_snapshot_and_updates(client):
         update = ws.receive_json()
         assert update["type"] == "update"
         assert "events" in update and "snapshot" in update
+
+
+def test_broadcast_tolerates_connections_disconnecting_during_send():
+    session = manager.create_game(num_players=2, human_seats={0}, seed=3)
+    local_hub = Hub()
+
+    class DisconnectingSocket:
+        def __init__(self):
+            self.messages = []
+
+        async def send_json(self, payload):
+            self.messages.append(payload)
+            local_hub.remove(session.game_id, 0, self)
+
+    sockets = [DisconnectingSocket(), DisconnectingSocket()]
+    for socket in sockets:
+        local_hub.add(session.game_id, 0, socket)
+
+    asyncio.run(local_hub.broadcast(session.game_id, session, []))
+
+    assert all(len(socket.messages) == 1 for socket in sockets)
+    assert not local_hub.has_connections(session.game_id)
 
 
 def test_name_recorded_and_chat_broadcasts(client):

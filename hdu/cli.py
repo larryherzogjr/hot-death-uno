@@ -28,7 +28,7 @@ from .events import (
 )
 from .play import play_game, play_hand
 from .players.random_ai import RandomAI
-from .state import GameState, Phase
+from .state import GameState
 
 
 def _color_label(color: Color) -> str:

@@ -1,6 +1,6 @@
 """Structured events emitted by ``apply``.
 
-Consumers (CLI, AI, a future logger/network layer) react to events; the engine
+Consumers (CLI, AI, logger, and network layer) react to events; the engine
 never knows they exist. New event types are added as milestones add mechanics.
 """
 

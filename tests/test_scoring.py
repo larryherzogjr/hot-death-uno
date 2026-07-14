@@ -7,12 +7,11 @@ import random
 import pytest
 
 from hdu.cards import Card, CardId, Color
-from hdu.engine import WIN_THRESHOLD, apply, new_hand, settle_hand
+from hdu.engine import WIN_THRESHOLD, new_hand, settle_hand
 from hdu.play import play_game
 from hdu.players.random_ai import RandomAI
-from hdu.scoring import card_points, hand_points, score_hand
+from hdu.scoring import card_points, score_hand
 from hdu.state import DiscardEntry, GameState, Phase, PlayerState
-
 from tests.helpers import assert_conservation
 
 NUM = lambda color, n: Card(CardId.NUMBER, color, n)  # noqa: E731

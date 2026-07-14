@@ -12,6 +12,7 @@ import random
 
 from ..actions import Action, ChooseColor, ChooseVictim, PlayCard, Reveal
 from ..cards import Color
+from ..scoring import card_held_value
 from ..view import PlayerView
 
 
@@ -37,7 +38,17 @@ class RandomAI:
 
         plays = [a for a in legal_actions if isinstance(a, PlayCard)]
         if plays:
-            return self._rng.choice(plays)
+            # The v1 strategy is still deliberately shallow, but it sheds the
+            # costliest legal card first instead of choosing every play equally.
+            # Randomness only breaks equal-value ties and remains seeded.
+            values = {
+                a: card_held_value(
+                    view.hand[a.hand_index], view.hand, len(view.opponents)
+                )
+                for a in plays
+            }
+            highest = max(values.values())
+            return self._rng.choice([a for a in plays if values[a] == highest])
 
         # Only drawing, declining, or passing remains.
         return legal_actions[0]
@@ -48,7 +59,7 @@ class RandomAI:
             if not card.is_wild:
                 counts[card.color] = counts.get(card.color, 0) + 1
         if counts:
-            best = max(counts, key=counts.get)
+            best = max(counts, key=lambda color: counts[color])
             for a in colors:
                 if a.color is best:
                     return a

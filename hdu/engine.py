@@ -20,7 +20,7 @@ from .actions import (
     PlayCard,
     Reveal,
 )
-from .cards import Card, CardId, Color, DECK_SIZE, build_deck
+from .cards import DECK_SIZE, Card, CardId, Color, build_deck
 from .effects import EffectKind, effect_kind, matches
 from .events import (
     BastardHand,
@@ -104,9 +104,9 @@ def _deal_hand(
     """Shuffle a fresh deck with ``rng``, deal, and flip the starter. Pure given
     the RNG state; carries running ``scores`` / ``aids`` into the new hand.
 
-    Deal special conditions (HANDOFF §8 — a flipped action/draw starter acting
-    on the dealer, etc.) are deferred to M5; a wild starter is handled via the
-    opening choose-color, everything else is simply seated.
+    The implemented v1 deal behavior handles a Draw Two against the dealer and
+    opens color choice for wild starters. Remaining directed/draw starter rules
+    are tracked explicitly in RULES_DECISIONS.md.
     """
     deck = list(build_deck())
     rng.shuffle(deck)
@@ -249,9 +249,11 @@ def _respond_actions(state: GameState) -> list[Action]:
     if pending.kind == "quitter" and _two_player(state):
         # §7: only AIDS answers (both die); otherwise the Quitter player wins.
         hand = state.players[pending.target].hand
-        return [Decline()] + [
+        quitter_actions: list[Action] = [Decline()]
+        quitter_actions += [
             PlayCard(i) for i, c in enumerate(hand) if c.id is CardId.SHARE
         ]
+        return quitter_actions
     if pending.kind in ("quitter", "glasnost"):
         # The threatened player may decline (take it) or play a defense.
         hand = state.players[pending.target].hand
@@ -303,6 +305,12 @@ def _bastard_holder(state: GameState) -> int | None:
 
 
 def apply(state: GameState, action: Action) -> tuple[GameState, tuple[Event, ...]]:
+    # Keep this public boundary authoritative for every consumer, not only the
+    # network session wrapper. In particular, Python accepts negative sequence
+    # indexes; dispatching an unchecked PlayCard(-1) would make the slicing in
+    # _apply_play_card duplicate cards instead of removing one.
+    if action not in legal_actions(state):
+        raise ValueError(f"{action!r} is not legal in the current state")
     new_state, events = _apply_dispatch(state, action)
     # Terminal check during play: holding all four bastard cards ends the hand
     # immediately; that holder scores 0 (HANDOFF §8).
@@ -422,8 +430,8 @@ def _apply_play_card(
         return replace(base, to_act=nxt), tuple(events)
 
     if kind is EffectKind.DOUBLE_SKIP:
-        # Skip the next two players. (Two-player reduction to a single skip is a
-        # §7 modification deferred to M5.)
+        # Skip the next two players. §7 reduces this to a single skip; that case
+        # was handled above.
         for step in (1, 2):
             events.append(PlayerSkipped(_advance(base, pid, step, base.direction)))
         nxt = _advance(base, pid, 3, base.direction)
@@ -475,8 +483,8 @@ def _apply_choose_color(
     events: list[Event] = [ColorChosen(state.to_act, action.color)]
 
     # A discard of length 1 means this is the opening starter-wild choice: the
-    # same player then plays. (A Spreader-on-deal spread is a §8 deal condition,
-    # deferred to M5 — opening Spreader just starts as a plain wild.)
+    # same player then plays. Opening Spreader currently starts as a plain wild;
+    # full starter behavior is tracked in RULES_DECISIONS.md.
     if len(discard) == 1:
         return replace(base, phase=Phase.PLAY), tuple(events)
 
@@ -657,7 +665,7 @@ def _after_elimination(
     special-cased: that player simply keeps playing until they go out."""
     active = [p for p in state.players if not p.eliminated]
     if not active:
-        # All eliminated: no hand-winner. Full all-eliminated scoring is M5.
+        # All eliminated: no hand-winner; settle_hand scores every frozen hand.
         return replace(state, phase=Phase.HAND_OVER, winner=None, pending=None), tuple(events)
     nxt = _advance(state, origin, 1, state.direction)
     return replace(state, phase=Phase.PLAY, to_act=nxt, pending=None), tuple(events)
@@ -666,8 +674,7 @@ def _after_elimination(
 def _begin_quitter(
     state: GameState, origin: int, events: list[Event]
 ) -> tuple[GameState, tuple[Event, ...]]:
-    """Open a ``quitter`` pending threatening the next active player. (The M5
-    Quitter+Fucker=1000 terminal and the 2-player rule are deferred.)"""
+    """Open a ``quitter`` pending threatening the next active player."""
     target = _advance(state, origin, 1, state.direction)
     if target == origin:  # no one else active to threaten
         nxt = _advance(state, origin, 1, state.direction)

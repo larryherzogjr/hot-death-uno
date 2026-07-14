@@ -1,18 +1,24 @@
 # CLAUDE.md (legacy compatibility)
 
 Codex and other maintainers should read `AGENTS.md` first. This file remains for
-Claude Code compatibility and for its detailed historical project notes. The
-current suite contains 209 tests; older counts below are historical snapshots.
+Claude Code compatibility and historical project notes. Run the suite rather
+than maintaining a test-count claim here; counts below are historical snapshots.
 
 Standing conventions for this repo. Read every session. The detailed build spec — milestones, full card mechanics, the response-stack design, scoring order — lives in `HANDOFF.md`; this file is only the durable rules. When the two disagree, `HANDOFF.md` wins on *what* to build and this file wins on *how* to work.
 
 ## What this is
 
-A single-player, AI-opponent implementation of **Hot Death Uno** (a modified Uno variant) in pure Python, played through a text CLI. The long-term goal is for the same engine to later sit behind a websocket server for online multiplayer — so the engine must stay transport-agnostic from day one.
+A deterministic **Hot Death Uno** rules engine with an all-AI CLI harness and an
+authoritative FastAPI/WebSocket multiplayer server. The rules kernel remains
+transport-agnostic; `server/` and the browser client are consumers.
 
 ## Project status
 
-- Current milestone: **M5 — done. All milestones complete; the engine is feature-complete per HANDOFF.** 148 tests green; 240/240 mixed 4-player + 2-player games conserve 113 and terminate. M5 added: the **bastard-four terminal** (all four 0s — Quitter/Dump/Bounce/Holy-Defender — held → hand ends, holder scores 0; checked after every `apply` via the `_bastard_holder` chokepoint), **Quitter+Fucker = 1000** (scoring override), the **Magic 5 → Mystery Draw** knock-on (Mystery uses held values, so Magic 5 = −5 → −50), **all-eliminated "lowest deals next"** in `settle_hand`, the **2-player rules** (§7, gated on `_two_player` = 2 active: every reverse/skip variant → skip-and-play-again, Delayed Blast → no extra skip, M.A.D. → both die, Quitter → play-and-win unless AIDS), **last-card draw effects** (Draw Two / draw-four-types still hit the next player; other last-card effects moot), and the **Draw Two starter** deal condition.
+- Current milestone: **the M0–M5 core is implemented and regression-tested, but
+  product-level rules decisions remain.** See `RULES_DECISIONS.md`; do not call
+  the rules feature-complete until those choices are confirmed. M5 added the
+  bastard-four terminal, Quitter+Fucker scoring, Magic 5/Mystery Draw interaction,
+  all-eliminated dealing, two-player variants, last-card draws, and Draw Two starters.
 
   Prior: **M4** response stack (`pending.kind == "draw_stack"`: Draw Four/Hot Death/Delayed Blast/Harvester; defenses bounce/Holy-Defender/AIDS-split/Magic-5; Luck shaves punishment draws). **M3** Double/Reverse Skip, Spreader, M.A.D., Quitter, Glasnost, and the scoring-only specials as the ordered §8 pipeline in `scoring.py`. **M2** golf scoring + multi-hand. **M1** vanilla loop. **M0** 113-card deck. Engine surface: `Phase` {play, choose_color, choose_victim, respond, hand_over, game_over}; `Pending` kinds {draw_stack, spreader, quitter, glasnost, glasnost_choose}; actions PlayCard/DrawCard/ChooseColor/Pass/Reveal/Decline/ChooseVictim.
 
@@ -22,7 +28,8 @@ A single-player, AI-opponent implementation of **Hot Death Uno** (a modified Uno
 
   Prior milestones: **M2 — done** (golf scoring; `settle_hand` carries scores / rotates dealer +1 / one continuous RNG / ends at 1000, lowest wins; `play_game`; CLI `--game`). **M1 — done** (vanilla turn loop). **M0 — done** (113-card deck). Golden games in `tests/test_golden_games.py` are regenerated **deliberately** whenever a special's effect/held-value shifts flow. Milestones are defined in `HANDOFF.md` §1.
 
-  Toolchain note: system Python is 3.9; the 3.12 venv lives at `.venv/` (`python3.12 -m venv .venv`). Run tests with `.venv/bin/python -m pytest`.
+  Toolchain note: use Python 3.12 and install the checked development environment
+  as documented in `README.md`.
 
 ## The cardinal rule: the engine is pure
 
@@ -39,7 +46,7 @@ Heuristic: **if you are deciding what is legal, or resolving a card's effect, an
 
 ## Definition of done (every change)
 
-1. `python -m pytest -q` is green.
+1. Ruff, mypy, `python -m pytest -q`, and `python -m pip check` are green.
 2. The **card-conservation invariant** holds after every action: `sum(len(p.hand) for p in players) + len(draw_pile) + len(discard) == DECK_SIZE`. Cards are never created or destroyed. Run this assertion in a test helper after each `apply`.
 3. `legal_actions(state)` is non-empty unless `phase` is `hand_over` or `game_over`.
 4. The golden-game replay tests still produce identical final scores (or you changed them deliberately and said so).
@@ -48,7 +55,8 @@ Heuristic: **if you are deciding what is legal, or resolving a card's effect, an
 ## Conventions
 
 - Python **3.12+**, full type hints, `enum.Enum` for `Color` and `CardId`.
-- **Stdlib only inside the `hdu` engine package.** Third-party deps (e.g. `pytest`, and later a server framework) live in tooling/tests, never imported by the engine.
+- **Stdlib only inside the `hdu` rules kernel.** The colocated CLI/play/AI
+  consumers also use the standard library; web dependencies stay in `server/`.
 - Prefer **frozen dataclasses and pure functions**; `apply` returns new state rather than mutating in place.
 - The engine emits structured **events**; consumers react to events, the engine never knows they exist.
 - **Card identity is stable; display names are not.** Store an internal `CardId` enum and resolve labels through a `DISPLAY_NAMES` map. Renaming a card must never touch rules logic. (Several source names are deliberately crude — the rename layer is how you swap them.)
@@ -61,19 +69,30 @@ Assumes the layout in `HANDOFF.md` §2 and a virtualenv with `pytest` installed.
 ```bash
 .venv/bin/python -m pytest -q            # run the test suite (3.12 venv)
 .venv/bin/python -m pytest -q -k NAME    # focused test while iterating
+.venv/bin/ruff check hdu server tests
+.venv/bin/mypy hdu server
 .venv/bin/python -m hdu.cli              # CLI: play a hand vs AI opponents
 .venv/bin/python -m hdu.cli --game       # CLI: full game to 1000
 .venv/bin/uvicorn server.app:app --reload  # web API (REST + WebSocket) at :8000
 ```
 
-Web tooling deps (not imported by `hdu/`): `fastapi`, `uvicorn[standard]`, `httpx`, `websockets`. API lives under `/api/*`; the SPA (slice 4) mounts at `/` from `server/static/` when present. (Update this block if the toolchain changes — e.g. if you adopt `uv` or add a lint/format step.)
+Web tooling dependencies are declared in `pyproject.toml` and mirrored in
+`requirements.txt`; exact resolutions live in `constraints.txt`. The API lives
+under `/api/*`, and the SPA mounts at `/` from `server/static/`.
 
 ## Project phase
 
-The engine (M0–M5) is feature-complete, so the project has moved into the **front-end / transport phase**: a self-hosted web app for user testing, designed to carry into the eventual websocket multiplayer. This relaxes the old "CLI only" rule — but only *outside* `hdu/`. The web layer lives in **`server/`** (a consumer that imports `hdu` and never modifies it): `server/serialize.py` (PlayerView/Action/Event ↔ JSON, pure) and `server/session.py` (authoritative `SessionManager`/`GameSession` that holds `GameState`, drives AI seats, re-validates every action against `legal_actions`). Done: `server/app.py` (FastAPI REST + WebSocket; API under `/api/*`, errors mapped to HTTP codes, broadcaster pushes per-seat snapshots) and the **vanilla-JS SPA** in `server/static/` (index.html/style.css/app.js — renders entirely off `legal_actions`, WebSocket-driven, validated live in a browser). Features layered on: an optional **passcode gate** (`HDU_PASSCODE` via `.env`/compose; gates game creation only), an **end-of-hand pause** (`continue_hand` + `hand_result` preview so players read the scoring before the next deal; all-AI games auto-settle), and **multi-human seats** — create with `num_humans`, players claim a seat via `POST /join` and get a secret **player token** (`seat_tokens`); the token authorizes actions and gates the redacted view (`X-HDU-Player` header, `?token=` on the WS), so you only see/play your own hand. Reconnect reuses the stored token; game-full → 409; join broadcasts so the lobby fills live. SPA shows a lobby (seat roles + invite link) and per-seat turn gating. **Card help**: `server/catalog.py` (per-CardId description/category/value/defense, curated from the wiki + house rules) served at `GET /api/cards` powers both a **Rules modal** (how-to-play primer + categorized card reference) and **in-game tooltips** (hover + a "?" badge). Tooltips show each card's *live* held value — the snapshot annotates every hand card with `card_held_value` (so Penn State/Mystery Draw/Spreader/Magic 5 read their real current worth, never a static guess). Run with `.venv/bin/uvicorn server.app:app`; preview config in `.claude/launch.json`. **Deploy artifacts ready** (slice 5): `Dockerfile` (python:3.12-slim, non-root, healthcheck, single worker), `requirements.txt` (prod = `fastapi` + `uvicorn[standard]` only — verified sufficient in a clean venv), `docker-compose.yml` (binds `127.0.0.1:8126`), `deploy/nginx/hdu.ospdy.com.conf` (reverse proxy + `wss` upgrade map + TLS), and `deploy/README.md` (DNS → compose up → nginx → certbot). Couldn't build the image locally (Docker daemon not running on this Mac); it builds/runs on the Ubuntu box. v1 = single uvicorn worker, in-memory sessions.
+The project is in the **front-end / transport hardening phase**. The web layer
+lives in `server/`; the vanilla-JS SPA lives in `server/static/`. It supports
+multi-human lobbies, per-seat tokens and redacted views, optional passcodes and
+Google OAuth, chat, card help, paced AI turns, and end-of-hand review. Deployment
+uses the locally verified Python 3.12 Docker image, nginx/TLS, a health check, and
+one Uvicorn worker because sessions remain in memory.
 
 ## Do not (still standing)
 
-- **The `hdu/` engine stays pure**: stdlib only, no I/O, no networking, no un-seeded randomness, no rules logic. All of that lives in consumers (`server/`, `cli.py`, AI). This rule is permanent.
+- **The `hdu/` rules kernel stays pure**: stdlib only, no I/O, no networking,
+  and no unseeded randomness. I/O and transport live in consumers. This rule is
+  permanent.
 - No "smart" AI — random-legal baseline behind the `Player` protocol. Strategy is out of scope until the engine is proven.
 - Don't implement all the special cards at once (engine work is done, but the discipline holds for any future card tweaks).

@@ -6,7 +6,7 @@ resolved separately through :data:`DISPLAY_NAMES` / :func:`display_name`, so a
 rename never touches rules logic. Several source names in the original game are
 crude; the rename layer is how we swap them.
 
-Deck composition (v1, confirmed) — a single standard 108-card Uno deck with the
+Implemented deck composition (v1) — a single standard 108-card Uno deck with the
 HDU specials hand-modified onto specific real cards, exactly as the physical
 game does it. Singleton specials map cleanly onto the singleton slots that
 already exist (the four 0s, specific colored numbers, the wild slots).
@@ -32,8 +32,8 @@ changes, count does not) except the five singleton wild-types, which are added.
   Green 4   -> Luck o' the Irish
   Red Skip  -> Double Skip       Red Reverse -> Reverse Skip
 
-NEEDS CONFIRMATION (placeholders chosen so the deck is fixed for M0; changing
-them later only touches this module + the conservation count):
+PRODUCT CONFIRMATION STILL REQUIRED (tracked in RULES_DECISIONS.md; changing
+these later primarily touches this module, focused rules tests, and goldens):
   * Double Skip / Reverse Skip have no slot in HANDOFF §6. Modelled here as
     hand-modified RED action cards (so they retain a color and match on red or
     on their symbol). Color choice is arbitrary-but-fixed.

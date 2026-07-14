@@ -18,13 +18,12 @@ from hdu.players.random_ai import RandomAI
 from hdu.state import Phase
 
 # seed -> (winner, final scores per player)
-# Last regenerated when Spreader was corrected to the phoneboy.com/hdu spec
-# (act-again, 20×opponents, Penn State punishes the spreader). Regenerate
-# deliberately when flow changes.
+# Last regenerated when the baseline AI began preferring its highest-value legal
+# play, as specified by HANDOFF §9. Regenerate deliberately when flow changes.
 GOLDEN = {
-    1: (3, (1057, 529, 365, 231)),
-    7: (2, (902, 1126, 178, 554)),
-    42: (1, (1067, 697, 1117, 1134)),
+    1: (3, (1097, 756, 850, 498)),
+    7: (1, (1019, 928, 1063, 989)),
+    42: (3, (490, 792, 1006, 373)),
 }
 
 
@@ -38,8 +37,8 @@ def test_golden_full_game(seed, expected):
 
 # Two-player games exercise the §7 rule modifications end to end.
 GOLDEN_2P = {
-    1: (0, (757, 1155)),
-    5: (1, (2011, 440)),
+    1: (0, (506, 1057)),
+    5: (1, (1831, 364)),
 }
 
 

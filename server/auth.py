@@ -42,7 +42,7 @@ def email_allowed(email: str | None) -> bool:
     allow = _allowed_emails()
     if allow is None:
         return True
-    return bool(email) and email.lower() in allow
+    return email is not None and email.lower() in allow
 
 
 _oauth = OAuth()

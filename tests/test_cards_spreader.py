@@ -8,7 +8,6 @@ from hdu.actions import ChooseColor, Decline, PlayCard, Reveal
 from hdu.cards import Card, CardId, Color
 from hdu.engine import apply, card_count, legal_actions
 from hdu.events import PennStateRevealed, SpreaderStarted
-from hdu.scoring import card_points
 from hdu.state import DiscardEntry, GameState, Phase, PlayerState
 
 NUM = lambda color, n: Card(CardId.NUMBER, color, n)  # noqa: E731

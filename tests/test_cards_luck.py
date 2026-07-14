@@ -9,7 +9,7 @@ from hdu.actions import ChooseColor, Decline, DrawCard, PlayCard
 from hdu.cards import Card, CardId, Color
 from hdu.engine import apply, legal_actions
 from hdu.events import LuckRevealed
-from hdu.state import DiscardEntry, GameState, Phase, PlayerState
+from hdu.state import DiscardEntry, GameState, PlayerState
 
 NUM = lambda color, n: Card(CardId.NUMBER, color, n)  # noqa: E731
 DRAW_TWO = Card(CardId.DRAW_TWO, Color.RED)
