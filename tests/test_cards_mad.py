@@ -6,7 +6,7 @@ from __future__ import annotations
 from hdu.actions import ChooseVictim, PlayCard
 from hdu.cards import Card, CardId, Color
 from hdu.engine import apply, card_count, legal_actions
-from hdu.events import PlayerEliminated
+from hdu.events import PlayerEliminated, PlayerWonHand
 from hdu.scoring import card_points, score_hand
 from hdu.state import DiscardEntry, GameState, Phase, PlayerState
 
@@ -57,6 +57,22 @@ def test_turn_advance_skips_eliminated_players():
     st, _ = apply(st, ChooseVictim(1))  # eliminate P1
     # Active players are now P2, P3. Turn went from P0 to next active = P2.
     assert st.to_act == 2
+
+
+def test_last_active_player_wins_without_playing_alone():
+    hands = [
+        [MAD, NUM(Color.RED, 5)],
+        [NUM(Color.GREEN, 1)],
+        [NUM(Color.BLUE, 7)],
+    ]
+    st = _state(hands, NUM(Color.YELLOW, 3))
+    st, _ = apply(st, PlayCard(0))
+    st, events = apply(st, ChooseVictim(1))
+
+    assert st.phase is Phase.HAND_OVER
+    assert st.winner == 2
+    assert st.players[2].hand == (NUM(Color.BLUE, 7),)
+    assert any(isinstance(e, PlayerWonHand) and e.player == 2 for e in events)
 
 
 def test_eliminated_players_still_score_their_frozen_hand():

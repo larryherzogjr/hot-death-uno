@@ -18,12 +18,12 @@ from hdu.players.random_ai import RandomAI
 from hdu.state import Phase
 
 # seed -> (winner, final scores per player)
-# Last regenerated when the baseline AI began preferring its highest-value legal
-# play, as specified by HANDOFF §9. Regenerate deliberately when flow changes.
+# Last regenerated when elimination was changed to end the hand as soon as one
+# active player remains. Regenerate deliberately when flow changes.
 GOLDEN = {
-    1: (3, (1097, 756, 850, 498)),
-    7: (1, (1019, 928, 1063, 989)),
-    42: (3, (490, 792, 1006, 373)),
+    1: (3, (1039, 621, 523, 461)),
+    7: (1, (621, 535, 962, 1017)),
+    42: (2, (1051, 1004, 661, 780)),
 }
 
 

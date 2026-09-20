@@ -96,8 +96,8 @@ RULES_SECTIONS: list[dict] = [
              "defend with Fuck You (bounce + reverse), Holy Defender (pass it on), AIDS (split "
              "it), or — against Hot Death only — Magic 5 (nullify). Harvester can't be defended."},
     {"title": "Eliminations",
-     "body": "Quitter and M.A.D. freeze players out of the hand. A hand can even end with "
-             "everyone eliminated and no winner."},
+     "body": "Quitter and M.A.D. freeze players out of the hand. The last active player wins; "
+             "if everyone is eliminated, the hand ends with no winner."},
     {"title": "Terminal conditions",
      "body": "Holding all four 'bastard' zeros — Quitter, Shitter, Fucker, Holy Defender — ends "
              "the hand and you score 0. Being caught with Quitter + Fucker together is worth 1000."},

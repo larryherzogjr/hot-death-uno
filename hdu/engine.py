@@ -659,14 +659,24 @@ def _apply_choose_victim(
 def _after_elimination(
     state: GameState, origin: int, events: list[Event]
 ) -> tuple[GameState, tuple[Event, ...]]:
-    """Resolve play flow after one or more eliminations. A hand ends only when
-    *all* active players are eliminated (no winner — HANDOFF §5/§8); otherwise
-    play continues from the seat after ``origin``. The lone-survivor case is not
-    special-cased: that player simply keeps playing until they go out."""
+    """Resolve play flow after one or more eliminations.
+
+    No active players means there is no hand winner. One active player wins by
+    survival; making that player empty their hand against an eliminated table
+    would leave them taking turns alone. With two or more active players, play
+    continues from the seat after ``origin``.
+    """
     active = [p for p in state.players if not p.eliminated]
     if not active:
         # All eliminated: no hand-winner; settle_hand scores every frozen hand.
         return replace(state, phase=Phase.HAND_OVER, winner=None, pending=None), tuple(events)
+    if len(active) == 1:
+        winner = active[0].id
+        events.append(PlayerWonHand(winner))
+        return (
+            replace(state, phase=Phase.HAND_OVER, winner=winner, pending=None),
+            tuple(events),
+        )
     nxt = _advance(state, origin, 1, state.direction)
     return replace(state, phase=Phase.PLAY, to_act=nxt, pending=None), tuple(events)
 

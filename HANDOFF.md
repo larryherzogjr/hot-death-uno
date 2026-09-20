@@ -151,7 +151,7 @@ Notes that bite if you forget them:
 - **Direction** is `+1` / `-1`. Reverse flips it. With 2 players, reverse behaves as a skip (Section 7).
 - **Skips** advance past the next active player. Double Skip advances past two. Reverse Skip flips direction *then* skips one in the new direction.
 - **Elimination is per-hand.** Quitter and M.A.D. set `eliminated=True` and freeze that player's hand until the hand ends. Turn advancement skips eliminated players.
-- **A hand ends** when (a) a player empties their hand (they "win" the hand, scoring 0), **or** (b) all still-active players are eliminated (no winner — see scoring), **or** (c) a bastard-card / Quitter+Fucker terminal condition fires (Section 8).
+- **A hand ends** when (a) a player empties their hand (they "win" the hand, scoring 0), **or** (b) eliminations leave one active player (that survivor wins and scores 0) or no active players (no winner — see scoring), **or** (c) a bastard-card / Quitter+Fucker terminal condition fires (Section 8).
 - **Uno call.** When a player goes to one card they must call "Uno". If another player catches them before their next card is played, they draw 2. For the AI-only v1, model the call as automatic and add the catch mechanic as a later refinement (flag it as an open item — see Section 9).
 
 ---
